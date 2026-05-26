@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FuelFlow Ledger | Karan Filling Station Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- ==================== SECURITY LOCK SCREEN OVERLAY ==================== -->
+    <div class="lock-screen-overlay" id="lockScreen">
+        <div class="lock-box glass-panel">
+            <div class="lock-icon-glow">
+                <svg viewBox="0 0 24 24">
+                    <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                </svg>
+            </div>
+            <h2 class="lock-title" id="lockTitle">Set Secure PIN</h2>
+            <p class="lock-subtitle" id="lockSubtitle">Initialize your secure 4-digit PIN for personal ledger access.</p>
+            
+            <div class="pin-indicator-row">
+                <div class="pin-dot" id="pin-dot-1"></div>
+                <div class="pin-dot" id="pin-dot-2"></div>
+                <div class="pin-dot" id="pin-dot-3"></div>
+                <div class="pin-dot" id="pin-dot-4"></div>
+            </div>
+
+            <div class="pin-pad">
+                <button class="pin-btn" onclick="pressPinNum(1)">1</button>
+                <button class="pin-btn" onclick="pressPinNum(2)">2</button>
+                <button class="pin-btn" onclick="pressPinNum(3)">3</button>
+                <button class="pin-btn" onclick="pressPinNum(4)">4</button>
+                <button class="pin-btn" onclick="pressPinNum(5)">5</button>
+                <button class="pin-btn" onclick="pressPinNum(6)">6</button>
+                <button class="pin-btn" onclick="pressPinNum(7)">7</button>
+                <button class="pin-btn" onclick="pressPinNum(8)">8</button>
+                <button class="pin-btn" onclick="pressPinNum(9)">9</button>
+                <button class="pin-btn danger" onclick="clearPin()">C</button>
+                <button class="pin-btn" onclick="pressPinNum(0)">0</button>
+                <button class="pin-btn action" onclick="backspacePin()">
+                    <svg viewBox="0 0 24 24" style="width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.5">
+                        <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+                        <line x1="18" y1="9" x2="12" y2="15"/>
+                        <line x1="12" y1="9" x2="18" y2="15"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-container">
+        <!-- Dashboard Header -->
+        <header class="header-bar">
+            <div class="brand-wrapper">
+                <div class="brand-logo-glow">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M19 19c.55 0 1-.45 1-1V9c0-1.1-.9-2-2-2H6c-1.1 0-2 .9-2 2v9c0 .55.45 1 1 1h14zM8 9h8c.55 0 1 .45 1 1v2c0 .55-.45 1-1 1H8c-.55 0-1-.45-1-1v-2c0-.55.45-1 1-1zm3.25 6h1.5c.41 0 .75.34.75.75v1.5c0 .41-.34.75-.75.75h-1.5c-.41 0-.75-.34-.75-.75v-1.5c0-.41.34-.75.75-.75z" />
+                    </svg>
+                </div>
+                <h1 class="brand-title">Karan Filling Station Ledger</h1>
+            </div>
+
+            <div class="header-controls">
+                <!-- Month selector and Statement downloader -->
+                <div style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 0.25rem 0.5rem; border-radius: 10px; margin-right: 0.5rem;">
+                    <select id="statement-month" class="input-field" style="width: 120px; padding: 0.35rem 0.5rem; font-size: 0.8rem; background: transparent; border: none; height: auto; outline: none; cursor: pointer;">
+                        <option value="all">All Months</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="exportMonthStatement()" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; border-radius: 6px;">
+                        📥 Download Statement
+                    </button>
+                </div>
+
+                <!-- Lock Dashboard Button -->
+                <button class="tiny-btn lock-btn" onclick="lockLedger()" title="Lock Ledger (PIN Protect)" style="border-color: rgba(239, 68, 68, 0.2); color: var(--accent-danger); margin-right: 0.5rem;">
+                    <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2" viewBox="0 0 24 24">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                    </svg>
+                </button>
+
+                <!-- Backup CSV buttons -->
+                <button class="tiny-btn" onclick="exportDataToCSV()" title="Backup Ledger (Export CSV)">
+                    <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2" viewBox="0 0 24 24">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                </button>
+                <button class="tiny-btn" onclick="triggerCSVImport()" title="Restore Backup (Import CSV)">
+                    <svg style="width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2" viewBox="0 0 24 24">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                    </svg>
+                </button>
+                <input type="file" id="csvFileInput" accept=".csv" onchange="importDataFromCSV(event)" style="display: none;">
+            </div>
+        </header>
+
+        <!-- ==================== INTERACTIVE CREDIT CARDS ROW ==================== -->
+        <section>
+            <div class="cards-section-title">
+                <span>My Active Credit Cards</span>
+                <span id="active-card-filter-indicator" style="font-size: 0.8rem; font-weight: 500; color: var(--accent-gold); display: none;">
+                    Filtered active &bull; Click card again to reset
+                </span>
+            </div>
+            <div class="cards-slider-grid">
+                <!-- Axis Card -->
+                <div class="credit-card-3d axis" id="card-3d-axis" onclick="toggleCardFilter('axis')">
+                    <div class="cc-header">
+                        <span class="cc-logo">Axis Bank</span>
+                        <div class="cc-chip"></div>
+                    </div>
+                    <div class="cc-middle">
+                        <span class="cc-numbers">•••• •••• •••• 1044</span>
+                    </div>
+                    <div class="cc-footer">
+                        <div class="cc-progress-box">
+                            <div class="cc-progress-labels">
+                                <span id="cc-spent-axis">Spent: ₹0</span>
+                                <span id="cc-avail-axis">Avail: ₹2.45L</span>
+                            </div>
+                            <div class="cc-progress-bar">
+                                <div class="cc-progress-fill" id="cc-fill-axis" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ICICI Card -->
+                <div class="credit-card-3d icici" id="card-3d-icici" onclick="toggleCardFilter('icici')">
+                    <div class="cc-header">
+                        <span class="cc-logo">ICICI Bank</span>
+                        <div class="cc-chip"></div>
+                    </div>
+                    <div class="cc-middle">
+                        <span class="cc-numbers">•••• •••• •••• 3088</span>
+                    </div>
+                    <div class="cc-footer">
+                        <div class="cc-progress-box">
+                            <div class="cc-progress-labels">
+                                <span id="cc-spent-icici">Spent: ₹0</span>
+                                <span id="cc-avail-icici">Avail: ₹3.8L</span>
+                            </div>
+                            <div class="cc-progress-bar">
+                                <div class="cc-progress-fill" id="cc-fill-icici" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HDFC Card -->
+                <div class="credit-card-3d hdfc" id="card-3d-hdfc" onclick="toggleCardFilter('hdfc')">
+                    <div class="cc-header">
+                        <span class="cc-logo">HDFC Bank</span>
+                        <div class="cc-chip"></div>
+                    </div>
+                    <div class="cc-middle">
+                        <span class="cc-numbers">•••• •••• •••• 9522</span>
+                    </div>
+                    <div class="cc-footer">
+                        <div class="cc-progress-box">
+                            <div class="cc-progress-labels">
+                                <span id="cc-spent-hdfc">Spent: ₹0</span>
+                                <span id="cc-avail-hdfc">Avail: ₹1.75L</span>
+                            </div>
+                            <div class="cc-progress-bar">
+                                <div class="cc-progress-fill" id="cc-fill-hdfc" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SBI Card -->
+                <div class="credit-card-3d sbi" id="card-3d-sbi" onclick="toggleCardFilter('sbi')">
+                    <div class="cc-header">
+                        <span class="cc-logo">SBI Card</span>
+                        <div class="cc-chip"></div>
+                    </div>
+                    <div class="cc-middle">
+                        <span class="cc-numbers">•••• •••• •••• 6470</span>
+                    </div>
+                    <div class="cc-footer">
+                        <div class="cc-progress-box">
+                            <div class="cc-progress-labels">
+                                <span id="cc-spent-sbi">Spent: ₹0</span>
+                                <span id="cc-avail-sbi">Avail: ₹3.77L</span>
+                            </div>
+                            <div class="cc-progress-bar">
+                                <div class="cc-progress-fill" id="cc-fill-sbi" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== SYSTEM TOTALS WIDGETS BANNER ==================== -->
+        <section class="stats-banner">
+            <div class="glass-panel stat-item-glow debits">
+                <div class="stat-item-label">Total Debited</div>
+                <div class="stat-item-value text-danger" id="total-debited-sum">₹0.00</div>
+            </div>
+            <div class="glass-panel stat-item-glow receipts">
+                <div class="stat-item-label">Total Received</div>
+                <div class="stat-item-value text-success" id="total-received-sum">₹0.00</div>
+            </div>
+            <div class="glass-panel stat-item-glow variance">
+                <div class="stat-item-label">Net Fee Variance</div>
+                <div class="stat-item-value" id="total-charges-sum">₹0.00</div>
+            </div>
+            <div class="glass-panel stat-item-glow" style="--stat-glow-color: #a855f7;">
+                <div class="stat-item-label">Cash vs Online Payouts</div>
+                <div style="font-size: 0.82rem; margin-top: 0.25rem;">
+                    Cash: <b class="text-success" id="method-sum-cash">₹0.00</b><br>
+                    Online: <b class="text-info" id="method-sum-online">₹0.00</b>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== THE TWO DUAL LEDGERSColumns ==================== -->
+        <section class="columns-grid">
+            <!-- COLUMN 1: CARD DEBITS -->
+            <div class="glass-panel" style="min-height: 480px;">
+                <div class="column-header-box">
+                    <h2 class="column-title">
+                        <span class="column-title-dot red"></span>
+                        Card Debits
+                    </h2>
+                    <button class="btn btn-primary" onclick="openDebitModal()">
+                        <svg style="width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.5" viewBox="0 0 24 24">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Log Debit
+                    </button>
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Card Brand</th>
+                                <th>Amount Debited</th>
+                                <th style="width: 80px; text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="debits-tbody">
+                            <!-- Populated dynamically by app.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- COLUMN 2: PUMP PAYOUT RECEIPTS -->
+            <div class="glass-panel" style="min-height: 480px;">
+                <div class="column-header-box">
+                    <h2 class="column-title">
+                        <span class="column-title-dot green"></span>
+                        Pump Payout Receipts
+                    </h2>
+                    <button class="btn btn-success" onclick="openReceiptModal()" style="color: #000;">
+                        <svg style="width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.5" viewBox="0 0 24 24">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        Log Receipt
+                    </button>
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Received Amount</th>
+                                <th>Method</th>
+                                <th>Notes / Details</th>
+                                <th style="width: 80px; text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="receipts-tbody">
+                            <!-- Populated dynamically by app.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer style="display: flex; justify-content: space-between; align-items: center; color: var(--text-muted); font-size: 0.8rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
+            <span>Karan Filling Station Ledger &bull; Secure Offline Storage</span>
+            <span>Current Date: <b id="current-calendar-date">Loading...</b></span>
+        </footer>
+    </div>
+
+    <!-- ==================== MODAL 1: LOG CARD DEBIT ==================== -->
+    <div class="modal-overlay" id="debitModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="debitModalTitle">Log Credit Card Debit</h3>
+                <button class="close-btn" onclick="closeDebitModal()">&times;</button>
+            </div>
+            <form id="debitForm" onsubmit="handleDebitSubmit(event)">
+                <input type="hidden" id="debit-id">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="debit-date">Transaction Date</label>
+                        <input type="date" id="debit-date" class="input-field" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="debit-card">Debit from Credit Card</label>
+                        <select id="debit-card" class="input-field" required>
+                            <option value="axis">Axis Bank</option>
+                            <option value="icici">ICICI Bank</option>
+                            <option value="hdfc">HDFC Bank</option>
+                            <option value="sbi">SBI Card</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="debit-amount">Amount Debited from Card (₹)</label>
+                        <input type="number" id="debit-amount" class="input-field" step="0.01" min="1" placeholder="e.g. 10000" required>
+                    </div>
+                </div>
+                <div class="form-actions" style="margin-top: 1.5rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeDebitModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Debit</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL 2: LOG PUMP PAYOUT RECEIPT ==================== -->
+    <div class="modal-overlay" id="receiptModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="receiptModalTitle">Log Pump Payout Receipt</h3>
+                <button class="close-btn" onclick="closeReceiptModal()">&times;</button>
+            </div>
+            <form id="receiptForm" onsubmit="handleReceiptSubmit(event)">
+                <input type="hidden" id="receipt-id">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="receipt-date">Date Received</label>
+                        <input type="date" id="receipt-date" class="input-field" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="receipt-amount">Amount Received (₹)</label>
+                        <input type="number" id="receipt-amount" class="input-field" step="0.01" min="1" placeholder="e.g. 9800" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="receipt-method">Receipt Method</label>
+                        <select id="receipt-method" class="input-field">
+                            <option value="cash">Cash In Hand</option>
+                            <option value="online">Online Transfer (UPI/GPay/Bank)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="receipt-notes">Notes / Payout Details</label>
+                        <input type="text" id="receipt-notes" class="input-field" placeholder="e.g. Raju Bhai, online via UPI (Optional)">
+                    </div>
+                </div>
+                <div class="form-actions" style="margin-top: 1.5rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeReceiptModal()">Cancel</button>
+                    <button type="submit" class="btn btn-success" style="color: #000;">Save Receipt</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
+
+    <script src="app.js"></script>
+</body>
+</html>
