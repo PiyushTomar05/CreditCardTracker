@@ -29,7 +29,7 @@ const SUPABASE_KEY_KEY = 'fuel_flow_supabase_key';
 const DEFAULT_SUPABASE_URL = 'https://atqrapmbmnfeqfbfyrpq.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'sb_publishable_bjDODimKrDwayREG9ohpHg_m5Vg7Mv7';
 
-let supabase = null;
+let supabaseClient = null;
 let activeUser = null;
 let isLoaded = false;
 let isSignUpMode = false;
@@ -41,7 +41,7 @@ function initSupabaseClient() {
     
     if (url && key && window.supabase) {
         try {
-            supabase = window.supabase.createClient(url, key);
+            supabaseClient = window.supabase.createClient(url, key);
             console.log("Supabase client initialized successfully.");
             return true;
         } catch (e) {
@@ -115,7 +115,7 @@ function toggleAuthMode(event) {
 async function handleAuthSubmit(event) {
     if (event) event.preventDefault();
     
-    if (!supabase) {
+    if (!supabaseClient) {
         if (!initSupabaseClient()) {
             alert("⚠️ Supabase is not configured yet! Click '⚙️ Database Settings' below, paste your Supabase URL & Anon Key, and save them first.");
             toggleConfigDrawer();
@@ -134,7 +134,7 @@ async function handleAuthSubmit(event) {
     try {
         if (isSignUpMode) {
             // Sign Up
-            const { data, error } = await supabase.auth.signUp({ email, password });
+            const { data, error } = await supabaseClient.auth.signUp({ email, password });
             if (error) throw error;
             
             if (data && data.user) {
@@ -150,7 +150,7 @@ async function handleAuthSubmit(event) {
             }
         } else {
             // Sign In
-            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
             if (error) throw error;
             
             if (data && data.session) {
@@ -189,10 +189,10 @@ async function handleLoginSuccess(session) {
 }
 
 async function checkSession() {
-    if (!supabase) return;
+    if (!supabaseClient) return;
     
     try {
-        const { data, error } = await supabase.auth.getSession();
+        const { data, error } = await supabaseClient.auth.getSession();
         if (error) throw error;
         
         if (data && data.session) {
@@ -209,11 +209,11 @@ async function checkSession() {
 }
 
 async function handleSignOut() {
-    if (!supabase) return;
+    if (!supabaseClient) return;
     
     if (confirm("Are you sure you want to log out of your cloud ledger? Your local browser session will be locked.")) {
         try {
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             activeUser = null;
             isLoaded = false;
             
@@ -243,10 +243,10 @@ async function handleSignOut() {
 
 // 4. Data Synchronization Routines
 async function loadStateFromCloud() {
-    if (!supabase || !activeUser) return;
+    if (!supabaseClient || !activeUser) return;
     
     try {
-        const { data: row, error } = await supabase
+        const { data: row, error } = await supabaseClient
             .from('ledger_sync')
             .select('data')
             .eq('user_id', activeUser.id)
@@ -273,7 +273,7 @@ async function loadStateFromCloud() {
 }
 
 async function saveStateToCloud() {
-    if (!supabase || !activeUser) return;
+    if (!supabaseClient || !activeUser) return;
     
     try {
         const payload = {
@@ -282,7 +282,7 @@ async function saveStateToCloud() {
             receipts: state.receipts
         };
         
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('ledger_sync')
             .upsert({
                 user_id: activeUser.id,
@@ -418,7 +418,7 @@ function saveStateToStorage() {
         console.log("Database successfully synced to local storage.");
         updateDiagnostics("Saved Database");
         
-        if (supabase && activeUser) {
+        if (supabaseClient && activeUser) {
             saveStateToCloud();
         }
     } catch (e) {
@@ -444,7 +444,7 @@ function openSyncInfoModal() {
     const activeInfo = document.getElementById('syncServerActiveInfo');
     const browserInfo = document.getElementById('syncBrowserOnlyInfo');
     
-    if (supabase && activeUser) {
+    if (supabaseClient && activeUser) {
         if (activeInfo) activeInfo.style.display = 'block';
         if (browserInfo) browserInfo.style.display = 'none';
     } else {
