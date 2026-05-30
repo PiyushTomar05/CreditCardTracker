@@ -1,9 +1,9 @@
 /**
  * ==========================================================================
- * CREDIT CARD PETROL CASH-OUT TRACKER - LUXURY INTERACTIVE ENGINE
+ * CREDIT CARD PETROL CASH-OUT TRACKER - LUXURY CLOUD ENGINE (SUPABASE)
  * ==========================================================================
  * Author: Antigravity
- * Features: 3D Card Toggles, Fills, Offline Storage, CSV Import/Export
+ * Features: PostgreSQL Cloud DB Sync, Email/Password Auth, Sandbox RLS
  * ==========================================================================
  */
 
@@ -17,41 +17,473 @@ let state = {
     },
     debits: [],
     receipts: [],
-    activeCardFilter: null, // Toggled by clicking 3D Cards
-    syncMode: 'loading',
-    securePin: ''
+    activeCardFilter: null // Toggled by clicking 3D Cards
 };
 
-// LocalStorage Keys
+// LocalStorage & Session Configuration Keys
 const STORAGE_KEY = 'fuel_flow_independent_state';
-const CUSTOM_SYNC_KEY = 'fuel_flow_custom_sync_url';
+const SUPABASE_URL_KEY = 'fuel_flow_supabase_url';
+const SUPABASE_KEY_KEY = 'fuel_flow_supabase_key';
 
-let API_URL = '';
-function updateApiUrl() {
-    const customSyncIp = localStorage.getItem(CUSTOM_SYNC_KEY);
-    if (customSyncIp) {
-        API_URL = `http://${customSyncIp.trim()}:3000/api/data`;
+// Hardcoded Default Connection Credentials (from PiyushTomar05's Supabase project)
+const DEFAULT_SUPABASE_URL = 'https://atqrapmbmnfeqfbfyrpq.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_bjDODimKrDwayREG9ohpHg_m5Vg7Mv7';
+
+let supabase = null;
+let activeUser = null;
+let isLoaded = false;
+let isSignUpMode = false;
+
+// 1. Initialize Supabase Client (uses local override or default hardcoded keys)
+function initSupabaseClient() {
+    const url = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+    const key = localStorage.getItem(SUPABASE_KEY_KEY) || DEFAULT_SUPABASE_KEY;
+    
+    if (url && key && window.supabase) {
+        try {
+            supabase = window.supabase.createClient(url, key);
+            console.log("Supabase client initialized successfully.");
+            return true;
+        } catch (e) {
+            console.error("Failed to initialize Supabase client:", e);
+        }
+    }
+    return false;
+}
+
+// 2. Collapsible Credentials Settings Drawer
+function toggleConfigDrawer(event) {
+    if (event) event.preventDefault();
+    const drawer = document.getElementById('configDrawer');
+    if (!drawer) return;
+    
+    if (drawer.style.display === 'none') {
+        drawer.style.display = 'flex';
+        document.getElementById('setupSupabaseUrl').value = localStorage.getItem(SUPABASE_URL_KEY) || DEFAULT_SUPABASE_URL;
+        document.getElementById('setupSupabaseKey').value = localStorage.getItem(SUPABASE_KEY_KEY) || DEFAULT_SUPABASE_KEY;
     } else {
-        const isLocalOrigin = window.location.protocol === 'http:' || window.location.protocol === 'https:';
-        API_URL = isLocalOrigin
-            ? '/api/data'
-            : 'http://localhost:3000/api/data';
+        drawer.style.display = 'none';
     }
 }
-updateApiUrl();
 
-let isLoaded = false;
+function saveDatabaseConfig() {
+    const url = document.getElementById('setupSupabaseUrl').value.trim();
+    const key = document.getElementById('setupSupabaseKey').value.trim();
+    
+    if (!url || !key) {
+        alert("Please enter both your Supabase URL and Anon Key.");
+        return;
+    }
+    
+    localStorage.setItem(SUPABASE_URL_KEY, url);
+    localStorage.setItem(SUPABASE_KEY_KEY, key);
+    
+    if (initSupabaseClient()) {
+        alert("🎉 Supabase Credentials saved successfully! You can now Sign In or Create an Account.");
+        const drawer = document.getElementById('configDrawer');
+        if (drawer) drawer.style.display = 'none';
+        updateSyncBadge('loading', 'Ready to Log In');
+        checkSession(); // Quick check to see if there is an active session
+    } else {
+        alert("❌ Failed to initialize Supabase. Please check your credentials.");
+    }
+}
 
-// Initialize Application
+// 3. User Authentication & Account Management
+function toggleAuthMode(event) {
+    if (event) event.preventDefault();
+    isSignUpMode = !isSignUpMode;
+    
+    const titleEl = document.getElementById('lockTitle');
+    const toggleTextEl = document.getElementById('authToggleText');
+    const toggleLinkEl = document.getElementById('authToggleLink');
+    const submitBtn = document.getElementById('authSubmitBtn');
+    
+    if (isSignUpMode) {
+        if (titleEl) titleEl.textContent = "Create Cloud Ledger Account";
+        if (toggleTextEl) toggleTextEl.textContent = "Already have a cloud database?";
+        if (toggleLinkEl) toggleLinkEl.textContent = "Sign In here";
+        if (submitBtn) submitBtn.textContent = "Create Account & Migrate";
+    } else {
+        if (titleEl) titleEl.textContent = "Cloud Ledger Secure Login";
+        if (toggleTextEl) toggleTextEl.textContent = "Don't have a cloud database?";
+        if (toggleLinkEl) toggleLinkEl.textContent = "Create Account";
+        if (submitBtn) submitBtn.textContent = "Sign In";
+    }
+}
+
+async function handleAuthSubmit(event) {
+    if (event) event.preventDefault();
+    
+    if (!supabase) {
+        if (!initSupabaseClient()) {
+            alert("⚠️ Supabase is not configured yet! Click '⚙️ Database Settings' below, paste your Supabase URL & Anon Key, and save them first.");
+            toggleConfigDrawer();
+            return;
+        }
+    }
+    
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+    const submitBtn = document.getElementById('authSubmitBtn');
+    const originalBtnText = submitBtn.textContent;
+    
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Processing... Please Wait...";
+    
+    try {
+        if (isSignUpMode) {
+            // Sign Up
+            const { data, error } = await supabase.auth.signUp({ email, password });
+            if (error) throw error;
+            
+            if (data && data.user) {
+                if (data.session) {
+                    activeUser = data.user;
+                    alert("🎉 Account created successfully!");
+                    await handleLoginSuccess(data.session);
+                } else {
+                    alert("✉️ Account registration submitted! Please check your email inbox to verify your account, then log in.");
+                    isSignUpMode = false;
+                    toggleAuthMode();
+                }
+            }
+        } else {
+            // Sign In
+            const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+            
+            if (data && data.session) {
+                activeUser = data.user;
+                await handleLoginSuccess(data.session);
+            }
+        }
+    } catch (err) {
+        console.error("Auth failed:", err);
+        flashErrorFeedback();
+        alert(`❌ Authentication Error: ${err.message || err}`);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalBtnText;
+    }
+}
+
+async function handleLoginSuccess(session) {
+    activeUser = session.user;
+    updateSyncBadge('active', '🟢 Cloud Synced');
+    
+    // Fetch user rows from Supabase
+    await loadStateFromCloud();
+    
+    // Hide the login screen overlay
+    const lockScreen = document.getElementById('lockScreen');
+    if (lockScreen) lockScreen.classList.add('hidden');
+    
+    // Clear credentials fields
+    document.getElementById('authEmail').value = '';
+    document.getElementById('authPassword').value = '';
+    
+    isLoaded = true;
+    renderAll();
+    updateDiagnostics("Cloud Database Synced");
+}
+
+async function checkSession() {
+    if (!supabase) return;
+    
+    try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
+        if (data && data.session) {
+            await handleLoginSuccess(data.session);
+        } else {
+            // Show lock screen
+            const lockScreen = document.getElementById('lockScreen');
+            if (lockScreen) lockScreen.classList.remove('hidden');
+            updateSyncBadge('loading', 'Ready to Log In');
+        }
+    } catch (e) {
+        console.warn("Session retrieval failed:", e);
+    }
+}
+
+async function handleSignOut() {
+    if (!supabase) return;
+    
+    if (confirm("Are you sure you want to log out of your cloud ledger? Your local browser session will be locked.")) {
+        try {
+            await supabase.auth.signOut();
+            activeUser = null;
+            isLoaded = false;
+            
+            // Empty variable state to prevent visual leaks
+            state.debits = [];
+            state.receipts = [];
+            state.cards = {
+                axis: { name: 'Axis Bank', limit: 245000, spent: 0 },
+                icici: { name: 'ICICI Bank', limit: 380000, spent: 0 },
+                hdfc: { name: 'HDFC Bank', limit: 175000, spent: 0 },
+                sbi: { name: 'SBI Card', limit: 377000, spent: 0 }
+            };
+            
+            renderAll();
+            
+            // Re-show login screen
+            const lockScreen = document.getElementById('lockScreen');
+            if (lockScreen) lockScreen.classList.remove('hidden');
+            
+            updateSyncBadge('loading', 'Logged Out');
+            alert("🚪 You have successfully logged out. Dashboard has been securely locked.");
+        } catch (e) {
+            console.error("Log out failed:", e);
+        }
+    }
+}
+
+// 4. Data Synchronization Routines
+async function loadStateFromCloud() {
+    if (!supabase || !activeUser) return;
+    
+    try {
+        const { data: row, error } = await supabase
+            .from('ledger_sync')
+            .select('data')
+            .eq('user_id', activeUser.id)
+            .single();
+            
+        if (error) {
+            if (error.code === 'PGRST116') {
+                // Row doesn't exist yet! (First time cloud setup)
+                console.log("Cloud database empty. Performing initial migration of local records...");
+                loadStateFromLocalStorage(); // Load what's currently in their browser
+                await saveStateToCloud(); // Save to cloud to establish row
+            } else {
+                throw error;
+            }
+        } else if (row && row.data) {
+            loadStateFromData(row.data);
+            console.log("State successfully fetched from cloud database.");
+        }
+    } catch (e) {
+        console.error("Failed to load state from cloud, falling back to localStorage:", e);
+        loadStateFromLocalStorage();
+        updateSyncBadge('fallback', '⚠️ Sync Server Lost');
+    }
+}
+
+async function saveStateToCloud() {
+    if (!supabase || !activeUser) return;
+    
+    try {
+        const payload = {
+            cards: state.cards,
+            debits: state.debits,
+            receipts: state.receipts
+        };
+        
+        const { error } = await supabase
+            .from('ledger_sync')
+            .upsert({
+                user_id: activeUser.id,
+                data: payload,
+                updated_at: new Date().toISOString()
+            });
+            
+        if (error) throw error;
+        console.log("Physically backed up state to Supabase cloud database.");
+        updateDiagnostics("Cloud Sync Complete");
+        updateSyncBadge('active', '🟢 Cloud Synced');
+    } catch (e) {
+        console.error("Cloud save failed:", e);
+        updateDiagnostics("Cloud Write Failed");
+        updateSyncBadge('fallback', '⚠️ Cloud Sync Error');
+    }
+}
+
+function loadStateFromData(parsed) {
+    if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.debits)) {
+            state.debits = parsed.debits.filter(d => d && d.id && typeof d.id === 'string' && !d.id.includes('demo'));
+        }
+        if (Array.isArray(parsed.receipts)) {
+            state.receipts = parsed.receipts.filter(r => r && r.id && typeof r.id === 'string' && !r.id.includes('demo'));
+        }
+        if (parsed.cards && typeof parsed.cards === 'object' && !Array.isArray(parsed.cards)) {
+            state.cards = parsed.cards;
+        }
+    }
+    
+    // Force strict card limit settings safely
+    const defaultCards = {
+        axis: { name: 'Axis Bank', limit: 245000, spent: 0 },
+        icici: { name: 'ICICI Bank', limit: 380000, spent: 0 },
+        hdfc: { name: 'HDFC Bank', limit: 175000, spent: 0 },
+        sbi: { name: 'SBI Card', limit: 377000, spent: 0 }
+    };
+    
+    if (!state.cards || typeof state.cards !== 'object' || Array.isArray(state.cards)) {
+        state.cards = defaultCards;
+    } else {
+        Object.keys(defaultCards).forEach(key => {
+            if (!state.cards[key] || typeof state.cards[key] !== 'object') {
+                state.cards[key] = defaultCards[key];
+            } else {
+                state.cards[key].limit = defaultCards[key].limit;
+            }
+        });
+    }
+}
+
+function loadStateFromLocalStorage() {
+    const localData = localStorage.getItem(STORAGE_KEY);
+    if (localData) {
+        try {
+            const parsed = JSON.parse(localData);
+            loadStateFromData(parsed);
+        } catch (e) {
+            console.error("Failed to parse storage, loading clean slate.", e);
+        }
+    } else {
+        // Safe migration from older single-table ledger formats
+        try {
+            const oldState = localStorage.getItem('fuel_flow_simplified_state') || localStorage.getItem('fuel_flow_ledger_state');
+            if (oldState) {
+                const parsed = JSON.parse(oldState);
+                if (parsed && typeof parsed === 'object') {
+                    const oldTransactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
+                    
+                    oldTransactions.forEach((t, i) => {
+                        if (t && t.debited && t.received) {
+                            const dateStr = t.date || new Date().toISOString().split('T')[0];
+                            if (t.id && (typeof t.id !== 'string' || t.id.includes('demo') || t.id.includes('mig'))) return;
+
+                            state.debits.push({
+                                id: `mig_d_${i}_${t.id || Math.random()}`,
+                                card: t.card || 'axis',
+                                date: dateStr,
+                                debited: parseFloat(t.debited) || 0
+                            });
+                            
+                            state.receipts.push({
+                                id: `mig_r_${i}_${t.id || Math.random()}`,
+                                date: dateStr,
+                                received: parseFloat(t.received) || 0,
+                                method: t.method || 'cash',
+                                notes: t.notes || 'Migrated from linked entry'
+                            });
+                        }
+                    });
+                    saveStateToStorage();
+                }
+            }
+        } catch (err) {
+            console.warn("Smart migration bypassed.", err);
+        }
+    }
+
+    // Force strict card limit settings safely
+    const defaultCards = {
+        axis: { name: 'Axis Bank', limit: 245000, spent: 0 },
+        icici: { name: 'ICICI Bank', limit: 380000, spent: 0 },
+        hdfc: { name: 'HDFC Bank', limit: 175000, spent: 0 },
+        sbi: { name: 'SBI Card', limit: 377000, spent: 0 }
+    };
+    
+    if (!state.cards || typeof state.cards !== 'object' || Array.isArray(state.cards)) {
+        state.cards = defaultCards;
+    } else {
+        Object.keys(defaultCards).forEach(key => {
+            if (!state.cards[key] || typeof state.cards[key] !== 'object') {
+                state.cards[key] = defaultCards[key];
+            } else {
+                state.cards[key].limit = defaultCards[key].limit;
+            }
+        });
+    }
+}
+
+function loadStateFromStorage() {
+    loadStateFromLocalStorage();
+}
+
+function saveStateToStorage() {
+    try {
+        const payload = {
+            cards: state.cards,
+            debits: state.debits,
+            receipts: state.receipts
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        console.log("Database successfully synced to local storage.");
+        updateDiagnostics("Saved Database");
+        
+        if (supabase && activeUser) {
+            saveStateToCloud();
+        }
+    } catch (e) {
+        console.error("Critical: Storage write failed!", e);
+        updateDiagnostics("Write Failed!");
+    }
+}
+
+function updateSyncBadge(status, text) {
+    const badge = document.getElementById('syncStatusBadge');
+    if (!badge) return;
+    
+    badge.className = `sync-status-badge ${status}`;
+    const textEl = badge.querySelector('.sync-status-text');
+    if (textEl) textEl.textContent = text;
+}
+
+// Collapsible storage sync info modal bindings
+function openSyncInfoModal() {
+    const modal = document.getElementById('syncInfoModal');
+    if (!modal) return;
+    
+    const activeInfo = document.getElementById('syncServerActiveInfo');
+    const browserInfo = document.getElementById('syncBrowserOnlyInfo');
+    
+    if (supabase && activeUser) {
+        if (activeInfo) activeInfo.style.display = 'block';
+        if (browserInfo) browserInfo.style.display = 'none';
+    } else {
+        if (activeInfo) activeInfo.style.display = 'none';
+        if (browserInfo) browserInfo.style.display = 'block';
+    }
+    
+    modal.classList.add('active');
+}
+
+function closeSyncInfoModal() {
+    const modal = document.getElementById('syncInfoModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function initSyncInfoModalBindings() {
+    const modal = document.getElementById('syncInfoModal');
+    if (!modal) return;
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeSyncInfoModal();
+    });
+}
+
+// 5. Initialize Application Event Handlers
 document.addEventListener('DOMContentLoaded', async () => {
     try {
-        initSyncInfoModalBindings(); // Activate popup event bindings
-        await initStorageAndState(); // Dynamic persistent handshake
+        initSyncInfoModalBindings();
         initDateDisplay();
-        renderAll();
-        isLoaded = true; // Securely lock state after first render completes!
-        updateDiagnostics("DB Connected");
-        initSecurityLock(); // Check and enforce security lock!
+        
+        const isConfigured = initSupabaseClient();
+        
+        if (isConfigured) {
+            await checkSession();
+        } else {
+            const lockScreen = document.getElementById('lockScreen');
+            if (lockScreen) lockScreen.classList.remove('hidden');
+            updateSyncBadge('fallback', '⚠️ Configuration Needed');
+            toggleConfigDrawer();
+        }
     } catch (err) {
         console.error("Bootup crash:", err);
         updateDiagnostics(`Error: ${err.message || err}`);
@@ -104,319 +536,12 @@ function initDateDisplay() {
     }
 }
 
-// Asynchronous Handshake & Sync Engine
-async function initStorageAndState() {
-    try {
-        updateSyncBadge('loading', 'Loading Sync...');
-
-        // 1.2 second timeout abort controller
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 1200);
-
-        const response = await fetch(API_URL, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok) {
-            const serverData = await response.json();
-            if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
-                loadStateFromData(serverData);
-                state.syncMode = 'server';
-                updateSyncBadge('active', 'Server Sync Active');
-                console.log("Connected to persistent local storage sync server.");
-                return;
-            } else {
-                console.log("Sync server empty. Performing initial migration from LocalStorage...");
-                loadStateFromLocalStorage();
-                state.syncMode = 'server';
-                updateSyncBadge('active', 'Server Sync Active');
-                await saveStateToSyncServer();
-                return;
-            }
-        } else {
-            throw new Error(`Server responded with status ${response.status}`);
-        }
-    } catch (err) {
-        console.warn("Sync server offline (normal in static deployment). Falling back to browser storage:", err);
-        loadStateFromLocalStorage();
-        state.syncMode = 'browser';
-        updateSyncBadge('fallback', 'Browser Memory Only');
-    }
-}
-
-async function saveStateToSyncServer() {
-    if (state.syncMode !== 'server') return;
-    try {
-        const payload = {
-            cards: state.cards,
-            debits: state.debits,
-            receipts: state.receipts,
-            securePin: state.securePin || localStorage.getItem('fuel_flow_secure_pin') || ''
-        };
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        if (response.ok) {
-            console.log("Physically backed up state to sync server.");
-            updateDiagnostics("Saved Database (Synced)");
-        } else {
-            console.error("Sync server write failed:", response.status);
-            updateDiagnostics("Server Write Error");
-        }
-    } catch (err) {
-        console.error("Failed to connect to sync server for saving:", err);
-        updateSyncBadge('fallback', 'Sync Server Lost');
-        state.syncMode = 'browser';
-        updateDiagnostics("Sync Server Offline");
-    }
-}
-
-function loadStateFromData(parsed) {
-    if (parsed && typeof parsed === 'object') {
-        if (Array.isArray(parsed.debits)) {
-            state.debits = parsed.debits.filter(d => d && d.id && typeof d.id === 'string' && !d.id.includes('demo'));
-        }
-        if (Array.isArray(parsed.receipts)) {
-            state.receipts = parsed.receipts.filter(r => r && r.id && typeof r.id === 'string' && !r.id.includes('demo'));
-        }
-        if (parsed.cards && typeof parsed.cards === 'object' && !Array.isArray(parsed.cards)) {
-            state.cards = parsed.cards;
-        }
-        if (parsed.securePin) {
-            state.securePin = parsed.securePin;
-            localStorage.setItem('fuel_flow_secure_pin', parsed.securePin);
-        }
-    }
-
-    // Force strict card limit settings safely
-    const defaultCards = {
-        axis: { name: 'Axis Bank', limit: 245000, spent: 0 },
-        icici: { name: 'ICICI Bank', limit: 380000, spent: 0 },
-        hdfc: { name: 'HDFC Bank', limit: 175000, spent: 0 },
-        sbi: { name: 'SBI Card', limit: 377000, spent: 0 }
-    };
-
-    if (!state.cards || typeof state.cards !== 'object' || Array.isArray(state.cards)) {
-        state.cards = defaultCards;
-    } else {
-        Object.keys(defaultCards).forEach(key => {
-            if (!state.cards[key] || typeof state.cards[key] !== 'object') {
-                state.cards[key] = defaultCards[key];
-            } else {
-                state.cards[key].limit = defaultCards[key].limit;
-            }
-        });
-    }
-}
-
-// Load State from LocalStorage
-function loadStateFromLocalStorage() {
-    const localData = localStorage.getItem(STORAGE_KEY);
-    if (localData) {
-        try {
-            const parsed = JSON.parse(localData);
-            loadStateFromData(parsed);
-        } catch (e) {
-            console.error("Failed to parse storage, loading clean slate.", e);
-        }
-    } else {
-        // Safe migration from older single-table ledger formats
-        try {
-            const oldState = localStorage.getItem('fuel_flow_simplified_state') || localStorage.getItem('fuel_flow_ledger_state');
-            if (oldState) {
-                const parsed = JSON.parse(oldState);
-                if (parsed && typeof parsed === 'object') {
-                    const oldTransactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
-
-                    oldTransactions.forEach((t, i) => {
-                        if (t && t.debited && t.received) {
-                            const dateStr = t.date || new Date().toISOString().split('T')[0];
-                            if (t.id && (typeof t.id !== 'string' || t.id.includes('demo') || t.id.includes('mig'))) return;
-
-                            state.debits.push({
-                                id: `mig_d_${i}_${t.id || Math.random()}`,
-                                card: t.card || 'axis',
-                                date: dateStr,
-                                debited: parseFloat(t.debited) || 0
-                            });
-
-                            state.receipts.push({
-                                id: `mig_r_${i}_${t.id || Math.random()}`,
-                                date: dateStr,
-                                received: parseFloat(t.received) || 0,
-                                method: t.method || 'cash',
-                                notes: t.notes || 'Migrated from linked entry'
-                            });
-                        }
-                    });
-                    saveStateToStorage();
-                }
-            }
-        } catch (err) {
-            console.warn("Smart migration bypassed.", err);
-        }
-    }
-
-    // Secondary backup sync for secure Pin variable
-    const savedPin = localStorage.getItem('fuel_flow_secure_pin');
-    if (savedPin) {
-        state.securePin = savedPin;
-    }
-
-    // Force strict card limit settings safely
-    const defaultCards = {
-        axis: { name: 'Axis Bank', limit: 245000, spent: 0 },
-        icici: { name: 'ICICI Bank', limit: 380000, spent: 0 },
-        hdfc: { name: 'HDFC Bank', limit: 175000, spent: 0 },
-        sbi: { name: 'SBI Card', limit: 377000, spent: 0 }
-    };
-
-    if (!state.cards || typeof state.cards !== 'object' || Array.isArray(state.cards)) {
-        state.cards = defaultCards;
-    } else {
-        Object.keys(defaultCards).forEach(key => {
-            if (!state.cards[key] || typeof state.cards[key] !== 'object') {
-                state.cards[key] = defaultCards[key];
-            } else {
-                state.cards[key].limit = defaultCards[key].limit;
-            }
-        });
-    }
-}
-
-// Backward-compatible alias
-function loadStateFromStorage() {
-    loadStateFromLocalStorage();
-}
-
-// Save State to LocalStorage
-function saveStateToStorage() {
-    try {
-        const payload = {
-            cards: state.cards,
-            debits: state.debits,
-            receipts: state.receipts,
-            securePin: state.securePin || localStorage.getItem('fuel_flow_secure_pin') || ''
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-        console.log("Database successfully synced to local storage.");
-        updateDiagnostics("Saved Database");
-
-        if (state.syncMode === 'server') {
-            saveStateToSyncServer();
-        }
-    } catch (e) {
-        console.error("Critical: Storage write failed!", e);
-        updateDiagnostics("Write Failed!");
-    }
-}
-
-// Sync UI Badge helper
-function updateSyncBadge(status, text) {
-    const badge = document.getElementById('syncStatusBadge');
-    if (!badge) return;
-
-    badge.className = `sync-status-badge ${status}`;
-    const textEl = badge.querySelector('.sync-status-text');
-    if (textEl) textEl.textContent = text;
-}
-
-// Sync System Information Popups
-function openSyncInfoModal() {
-    const modal = document.getElementById('syncInfoModal');
-    if (!modal) return;
-
-    const activeInfo = document.getElementById('syncServerActiveInfo');
-    const browserInfo = document.getElementById('syncBrowserOnlyInfo');
-
-    if (state.syncMode === 'server') {
-        if (activeInfo) activeInfo.style.display = 'block';
-        if (browserInfo) browserInfo.style.display = 'none';
-    } else {
-        if (activeInfo) activeInfo.style.display = 'none';
-        if (browserInfo) browserInfo.style.display = 'block';
-    }
-
-    // Populate custom sync IP input
-    const ipInput = document.getElementById('customSyncIp');
-    if (ipInput) {
-        ipInput.value = localStorage.getItem(CUSTOM_SYNC_KEY) || '';
-    }
-
-    modal.classList.add('active');
-}
-
-function closeSyncInfoModal() {
-    const modal = document.getElementById('syncInfoModal');
-    if (modal) modal.classList.remove('active');
-}
-
-function initSyncInfoModalBindings() {
-    const modal = document.getElementById('syncInfoModal');
-    if (!modal) return;
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) closeSyncInfoModal();
-    });
-}
-
-// Remote Wi-Fi Sync Override Handlers
-async function saveCustomSyncIp() {
-    const ipInput = document.getElementById('customSyncIp');
-    if (!ipInput) return;
-
-    const val = ipInput.value.trim();
-    if (!val) {
-        alert("Please enter a valid IP address.");
-        return;
-    }
-
-    // Quick regex validation for IPv4
-    const ipPattern = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    if (!ipPattern.test(val) && val !== 'localhost' && val !== '127.0.0.1') {
-        alert("Please enter a valid IP address (e.g. 192.168.1.5).");
-        return;
-    }
-
-    localStorage.setItem(CUSTOM_SYNC_KEY, val);
-    updateApiUrl();
-    closeSyncInfoModal();
-
-    // Immediately trigger a sync attempt with the new endpoint!
-    await initStorageAndState();
-    renderAll();
-
-    if (state.syncMode === 'server') {
-        alert("🎉 Connected successfully! Phone is now synced to your PC's persistent ledger database.");
-        // Restart secure lock to make sure PIN is updated
-        initSecurityLock();
-    } else {
-        alert("⚠️ Connection failed. Could not reach sync server at http://" + val + ":3000. Please double check that the launcher batch window is open on your PC and you are on the same Wi-Fi network.");
-    }
-}
-
-async function clearCustomSyncIp() {
-    localStorage.removeItem(CUSTOM_SYNC_KEY);
-    updateApiUrl();
-    closeSyncInfoModal();
-
-    await initStorageAndState();
-    renderAll();
-    initSecurityLock();
-    alert("Connection override cleared. Restored standard auto-origin routing.");
-}
-
 // Live diagnostics updater
 function updateDiagnostics(actionName = "Ready") {
     try {
         const localData = localStorage.getItem(STORAGE_KEY);
         const sizeKB = localData ? (localData.length / 1024).toFixed(2) : 0;
-
+        
         const keysCountEl = document.getElementById('diag-keys-count');
         if (keysCountEl) keysCountEl.textContent = localData ? `${sizeKB} KB` : 'Empty';
 
@@ -478,7 +603,7 @@ function calculateSums() {
         if (!d) return;
         const amt = parseFloat(d.debited) || 0;
         state.totalDebited += amt;
-
+        
         if (d.card && state.cards[d.card]) {
             state.cards[d.card].spent += amt;
         }
@@ -507,13 +632,13 @@ function renderMetrics() {
 
     const totalReceivedEl = document.getElementById('total-received-sum');
     if (totalReceivedEl) totalReceivedEl.textContent = formatINRFull(state.totalReceived || 0);
-
+    
     const cashEl = document.getElementById('method-sum-cash');
     if (cashEl) cashEl.textContent = formatINRFull(state.cashReceived || 0);
 
     const onlineEl = document.getElementById('method-sum-online');
     if (onlineEl) onlineEl.textContent = formatINRFull(state.onlineReceived || 0);
-
+    
     // Variance label with color trigger
     const varianceEl = document.getElementById('total-charges-sum');
     if (varianceEl) {
@@ -535,16 +660,16 @@ function renderMetrics() {
             const spent = card.spent || 0;
             const limit = card.limit || 0;
             const available = Math.max(limit - spent, 0);
-
+            
             // Progress fill percent
             const fillPercent = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
-
+            
             const spentEl = document.getElementById(`cc-spent-${key}`);
             if (spentEl) spentEl.textContent = `Spent: ${formatINR(spent)}`;
 
             const availEl = document.getElementById(`cc-avail-${key}`);
             if (availEl) availEl.textContent = `Avail: ${formatINR(available)}`;
-
+            
             // Update bar fill width and color dynamically
             const fillEl = document.getElementById(`cc-fill-${key}`);
             if (fillEl) {
@@ -566,7 +691,7 @@ function renderMetrics() {
 function toggleCardFilter(cardKey) {
     const indicator = document.getElementById('active-card-filter-indicator');
     const cardEl = document.getElementById(`card-3d-${cardKey}`);
-
+    
     if (state.activeCardFilter === cardKey) {
         // Reset card filter
         state.activeCardFilter = null;
@@ -578,7 +703,7 @@ function toggleCardFilter(cardKey) {
             const el = document.getElementById(`card-3d-${k}`);
             if (el) el.classList.remove('active-card');
         });
-
+        
         // Activate selected card
         state.activeCardFilter = cardKey;
         if (cardEl) cardEl.classList.add('active-card');
@@ -588,7 +713,7 @@ function toggleCardFilter(cardKey) {
             indicator.textContent = `Filtered to ${cardName} \u2022 Click card again to reset`;
         }
     }
-
+    
     renderDebitsTable();
 
     // Smooth scroll to the filtered debits ledger on mobile for clear interactive feedback!
@@ -607,7 +732,7 @@ function renderDebitsTable() {
     tbody.innerHTML = '';
 
     let filtered = Array.isArray(state.debits) ? [...state.debits].filter(d => d && d.date && d.id) : [];
-
+    
     // Apply interactive card filter if active
     if (state.activeCardFilter) {
         filtered = filtered.filter(d => d.card === state.activeCardFilter);
@@ -660,7 +785,7 @@ function renderReceiptsTable() {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    const sorted = Array.isArray(state.receipts)
+    const sorted = Array.isArray(state.receipts) 
         ? [...state.receipts].filter(r => r && r.date && r.id).sort((a, b) => new Date(b.date) - new Date(a.date))
         : [];
 
@@ -715,8 +840,22 @@ function openDebitModal() {
     document.getElementById('debitForm').reset();
     document.getElementById('debit-id').value = '';
     document.getElementById('debit-date').value = new Date().toISOString().split('T')[0];
-
+    
     document.getElementById('debitModal').classList.add('active');
+}
+
+// ==================== SECURITY LOCK LOGIC ====================
+
+function flashErrorFeedback() {
+    const lockBox = document.querySelector('.lock-box');
+    
+    // Play error haptic shake
+    if (lockBox) {
+        lockBox.classList.add('shake');
+        setTimeout(() => {
+            lockBox.classList.remove('shake');
+        }, 400);
+    }
 }
 
 function closeDebitModal() {
@@ -725,12 +864,12 @@ function closeDebitModal() {
 
 function handleDebitSubmit(event) {
     event.preventDefault();
-
+    
     const id = document.getElementById('debit-id').value;
     const date = document.getElementById('debit-date').value;
     const card = document.getElementById('debit-card').value;
     const amount = parseFloat(document.getElementById('debit-amount').value);
-
+    
     if (id) {
         const index = state.debits.findIndex(d => d.id === id);
         if (index !== -1) {
@@ -740,7 +879,7 @@ function handleDebitSubmit(event) {
         const newId = 'd_' + Math.random().toString(36).substr(2, 9);
         state.debits.push({ id: newId, card, date, debited: amount });
     }
-
+    
     closeDebitModal();
     saveStateToStorage();
     renderAll();
@@ -754,7 +893,7 @@ function editDebit(id) {
         document.getElementById('debit-date').value = debit.date;
         document.getElementById('debit-card').value = debit.card;
         document.getElementById('debit-amount').value = debit.debited;
-
+        
         document.getElementById('debitModal').classList.add('active');
     }
 }
@@ -774,7 +913,7 @@ function openReceiptModal() {
     document.getElementById('receiptForm').reset();
     document.getElementById('receipt-id').value = '';
     document.getElementById('receipt-date').value = new Date().toISOString().split('T')[0];
-
+    
     document.getElementById('receiptModal').classList.add('active');
 }
 
@@ -784,13 +923,13 @@ function closeReceiptModal() {
 
 function handleReceiptSubmit(event) {
     event.preventDefault();
-
+    
     const id = document.getElementById('receipt-id').value;
     const date = document.getElementById('receipt-date').value;
     const amount = parseFloat(document.getElementById('receipt-amount').value);
     const method = document.getElementById('receipt-method').value;
     const notes = document.getElementById('receipt-notes').value;
-
+    
     if (id) {
         const index = state.receipts.findIndex(r => r.id === id);
         if (index !== -1) {
@@ -800,7 +939,7 @@ function handleReceiptSubmit(event) {
         const newId = 'r_' + Math.random().toString(36).substr(2, 9);
         state.receipts.push({ id: newId, date, received: amount, method, notes });
     }
-
+    
     closeReceiptModal();
     saveStateToStorage();
     renderAll();
@@ -815,7 +954,7 @@ function editReceipt(id) {
         document.getElementById('receipt-amount').value = receipt.received;
         document.getElementById('receipt-method').value = receipt.method || 'cash';
         document.getElementById('receipt-notes').value = receipt.notes || '';
-
+        
         document.getElementById('receiptModal').classList.add('active');
     }
 }
@@ -830,29 +969,26 @@ function deleteReceipt(id) {
 
 // ==================== DATA CENTER BACKUP PORTABILITY ====================
 
-// Export dual ledger tables into a unified clean CSV with a "Type" column
 function exportDataToCSV() {
     if (state.debits.length === 0 && state.receipts.length === 0) {
         alert("There is no ledger data to export!");
         return;
     }
-
+    
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Type,Date,SourceOrCard,Amount,Notes\r\n";
-
-    // 1. Export Debits
+    
     state.debits.forEach(d => {
         const row = ["Debit", d.date, d.card, d.debited, ""].join(",");
         csvContent += row + "\r\n";
     });
 
-    // 2. Export Receipts
     state.receipts.forEach(r => {
         const notesEscaped = r.notes ? `"${r.notes.replace(/"/g, '""')}"` : "";
         const row = ["Receipt", r.date, r.method, r.received, notesEscaped].join(",");
         csvContent += row + "\r\n";
     });
-
+    
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -866,45 +1002,44 @@ function triggerCSVImport() {
     document.getElementById('csvFileInput').click();
 }
 
-// Parse imported CSV and restore arrays safely
 function importDataFromCSV(event) {
     const file = event.target.files[0];
     if (!file) return;
-
+    
     const reader = new FileReader();
-    reader.onload = function (e) {
+    reader.onload = function(e) {
         const text = e.target.result;
         const lines = text.split(/\r\n|\n/);
-
+        
         if (lines.length < 2) {
             alert("The uploaded file appears to be empty or malformed.");
             return;
         }
-
+        
         const headers = lines[0].toLowerCase().split(',');
         if (!headers.includes('type') || !headers.includes('sourceorcard') || !headers.includes('amount')) {
             alert("Error: Incorrect CSV format! Ensure you are importing a Karan Filling independent ledger CSV.");
             return;
         }
-
+        
         const importedDebits = [];
         const importedReceipts = [];
-
+        
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-
+            
             const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || line.split(',');
             if (cols.length < 4) continue;
-
+            
             const clean = str => str ? str.replace(/^"|"$/g, '').trim() : '';
-
+            
             const type = clean(cols[0]).toLowerCase();
             const date = clean(cols[1]);
             const source = clean(cols[2]).toLowerCase();
             const amount = parseFloat(clean(cols[3])) || 0;
             const notes = clean(cols[4]);
-
+            
             if (type === 'debit' && ['axis', 'icici', 'hdfc', 'sbi'].includes(source) && amount > 0) {
                 importedDebits.push({
                     id: 'd_' + Math.random().toString(36).substr(2, 9),
@@ -922,7 +1057,7 @@ function importDataFromCSV(event) {
                 });
             }
         }
-
+        
         const totalImported = importedDebits.length + importedReceipts.length;
         if (totalImported > 0) {
             if (confirm(`Successfully read ${importedDebits.length} debits and ${importedReceipts.length} receipts from CSV. Merge with current data? (Cancel will overwrite current records completely)`)) {
@@ -932,7 +1067,7 @@ function importDataFromCSV(event) {
                 state.debits = importedDebits;
                 state.receipts = importedReceipts;
             }
-
+            
             saveStateToStorage();
             renderAll();
             alert("Ledger restore complete!");
@@ -944,42 +1079,41 @@ function importDataFromCSV(event) {
     event.target.value = '';
 }
 
-// Populate Statement Month Dropdown
 function populateMonthDropdown() {
     const select = document.getElementById('statement-month');
     if (!select) return;
-
+    
     const monthsSet = new Set();
-
+    
     if (Array.isArray(state.debits)) {
         state.debits.forEach(d => {
             if (d && d.date && typeof d.date === 'string') {
                 const parts = d.date.split('-');
                 if (parts.length >= 2) {
-                    monthsSet.add(`${parts[0]}-${parts[1]}`); // "YYYY-MM"
+                    monthsSet.add(`${parts[0]}-${parts[1]}`);
                 }
             }
         });
     }
-
+    
     if (Array.isArray(state.receipts)) {
         state.receipts.forEach(r => {
             if (r && r.date && typeof r.date === 'string') {
                 const parts = r.date.split('-');
                 if (parts.length >= 2) {
-                    monthsSet.add(`${parts[0]}-${parts[1]}`); // "YYYY-MM"
+                    monthsSet.add(`${parts[0]}-${parts[1]}`);
                 }
             }
         });
     }
-
+    
     const uniqueMonths = Array.from(monthsSet).sort().reverse();
     const currentVal = select.value || 'all';
-
+    
     select.innerHTML = '<option value="all">All Months</option>';
-
+    
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
+    
     uniqueMonths.forEach(ym => {
         const parts = ym.split('-');
         if (parts.length >= 2) {
@@ -991,32 +1125,31 @@ function populateMonthDropdown() {
             }
         }
     });
-
+    
     if (Array.from(select.options).some(opt => opt.value === currentVal)) {
         select.value = currentVal;
     }
 }
 
-// Export Month Statement
 function exportMonthStatement() {
     const selectedMonth = document.getElementById('statement-month').value;
-
+    
     let filteredDebits = [...state.debits];
     let filteredReceipts = [...state.receipts];
-
+    
     if (selectedMonth !== 'all') {
         filteredDebits = filteredDebits.filter(d => d.date && d.date.startsWith(selectedMonth));
         filteredReceipts = filteredReceipts.filter(r => r.date && r.date.startsWith(selectedMonth));
     }
-
+    
     if (filteredDebits.length === 0 && filteredReceipts.length === 0) {
         alert("No transaction entries found for the selected period.");
         return;
     }
-
+     
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Type,Date,SourceOrCard,Amount,Notes\r\n";
-
+     
     filteredDebits.forEach(d => {
         const row = ["Debit", d.date, d.card, d.debited, ""].join(",");
         csvContent += row + "\r\n";
@@ -1027,11 +1160,11 @@ function exportMonthStatement() {
         const row = ["Receipt", r.date, r.method, r.received, notesEscaped].join(",");
         csvContent += row + "\r\n";
     });
-
+     
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-
+     
     const fileSuffix = selectedMonth === 'all' ? 'full_statement' : `statement_${selectedMonth}`;
     link.setAttribute("download", `karan_filling_${fileSuffix}.csv`);
     document.body.appendChild(link);
@@ -1039,7 +1172,6 @@ function exportMonthStatement() {
     document.body.removeChild(link);
 }
 
-// Clear all databases
 function clearAllData() {
     if (confirm("🚨 WARNING: Are you absolutely certain you want to erase ALL transaction history? This cannot be undone!")) {
         state.debits = [];
@@ -1050,19 +1182,18 @@ function clearAllData() {
     }
 }
 
-// Seed Demo Transactions for Testing
 function loadDemoData() {
     if ((state.debits.length > 0 || state.receipts.length > 0) && !confirm("Loading demo data will clear your existing records. Proceed?")) {
         return;
     }
-
+    
     const today = new Date();
     const subDays = (d) => {
         const copy = new Date(today);
         copy.setDate(today.getDate() - d);
         return copy.toISOString().split('T')[0];
     };
-
+    
     state.debits = [
         { id: 'd_demo1', card: 'axis', date: subDays(1), debited: 15000 },
         { id: 'd_demo2', card: 'icici', date: subDays(3), debited: 20000 },
@@ -1082,210 +1213,8 @@ function loadDemoData() {
         { id: 'r_demo6', date: subDays(12), received: 29400, method: 'online', notes: 'Online transfer via pump account' },
         { id: 'r_demo7', date: subDays(15), received: 49000, method: 'cash', notes: 'Bikram S. cash handover' }
     ];
-
+    
     saveStateToStorage();
     renderAll();
     alert("Demo independent records loaded successfully!");
-}
-
-// ==================== SECURITY LOCK LOGIC ====================
-
-let enteredPin = '';
-let isSettingPin = false;
-let tempPin = '';
-
-function initSecurityLock() {
-    const savedPin = localStorage.getItem('fuel_flow_secure_pin') || state.securePin;
-    const isUnlocked = sessionStorage.getItem('fuel_flow_unlocked') === 'true';
-    const lockScreen = document.getElementById('lockScreen');
-
-    if (!lockScreen) return;
-
-    // Set up keyboard bindings for physical keys
-    document.addEventListener('keydown', handlePhysicalKeyPress);
-
-    if (isUnlocked) {
-        lockScreen.classList.add('hidden');
-    } else {
-        lockScreen.classList.remove('hidden');
-        resetPinState();
-    }
-}
-
-function resetPinState() {
-    enteredPin = '';
-    tempPin = '';
-    const savedPin = localStorage.getItem('fuel_flow_secure_pin') || state.securePin;
-    const titleEl = document.getElementById('lockTitle');
-    const subtitleEl = document.getElementById('lockSubtitle');
-
-    if (!savedPin) {
-        isSettingPin = true;
-        if (titleEl) titleEl.textContent = "Set Secure PIN";
-        if (subtitleEl) subtitleEl.textContent = "Initialize your secure 4-digit PIN for personal ledger access.";
-    } else {
-        isSettingPin = false;
-        if (titleEl) titleEl.textContent = "Enter PIN";
-        if (subtitleEl) subtitleEl.textContent = "Karan Filling Station Ledger is secure. Enter your 4-digit PIN.";
-    }
-    updatePinDots();
-}
-
-function pressPinNum(num) {
-    if (enteredPin.length >= 4) return;
-    enteredPin += num;
-    updatePinDots();
-
-    if (enteredPin.length === 4) {
-        // Trigger automatic verification after a short, premium delay for UI breathing room
-        setTimeout(verifyEnteredPin, 250);
-    }
-}
-
-function clearPin() {
-    enteredPin = '';
-    updatePinDots();
-}
-
-function backspacePin() {
-    if (enteredPin.length > 0) {
-        enteredPin = enteredPin.slice(0, -1);
-        updatePinDots();
-    }
-}
-
-function updatePinDots() {
-    for (let i = 1; i <= 4; i++) {
-        const dot = document.getElementById(`pin-dot-${i}`);
-        if (dot) {
-            if (i <= enteredPin.length) {
-                dot.classList.add('filled');
-            } else {
-                dot.classList.remove('filled');
-            }
-            dot.classList.remove('error');
-        }
-    }
-}
-
-function verifyEnteredPin() {
-    const savedPin = localStorage.getItem('fuel_flow_secure_pin') || state.securePin;
-    const titleEl = document.getElementById('lockTitle');
-    const subtitleEl = document.getElementById('lockSubtitle');
-
-    if (isSettingPin) {
-        if (tempPin === '') {
-            // First pass of setting PIN
-            tempPin = enteredPin;
-            enteredPin = '';
-            updatePinDots();
-            if (titleEl) titleEl.textContent = "Confirm Secure PIN";
-            if (subtitleEl) subtitleEl.textContent = "Please enter your 4-digit PIN again to confirm.";
-        } else {
-            // Confirming PIN
-            if (enteredPin === tempPin) {
-                // Pin matched successfully!
-                localStorage.setItem('fuel_flow_secure_pin', enteredPin);
-                state.securePin = enteredPin;
-                saveStateToStorage(); // Force immediate backup of PIN settings to the sync server!
-                sessionStorage.setItem('fuel_flow_unlocked', 'true');
-                flashSuccessAndUnlock();
-            } else {
-                // Mismatch
-                flashErrorFeedback();
-                tempPin = '';
-                enteredPin = '';
-                setTimeout(() => {
-                    if (titleEl) titleEl.textContent = "PIN Mismatch";
-                    if (subtitleEl) subtitleEl.textContent = "PINs did not match. Please choose your 4-digit PIN again.";
-                    updatePinDots();
-                }, 600);
-            }
-        }
-    } else {
-        // Unlock verification
-        if (enteredPin === savedPin) {
-            sessionStorage.setItem('fuel_flow_unlocked', 'true');
-            flashSuccessAndUnlock();
-        } else {
-            flashErrorFeedback();
-            enteredPin = '';
-            setTimeout(() => {
-                if (subtitleEl) subtitleEl.textContent = "Incorrect PIN! Please try again.";
-                updatePinDots();
-            }, 600);
-        }
-    }
-}
-
-function flashSuccessAndUnlock() {
-    // Elegant green visual feedback
-    for (let i = 1; i <= 4; i++) {
-        const dot = document.getElementById(`pin-dot-${i}`);
-        if (dot) {
-            dot.style.boxShadow = '0 0 15px var(--accent-success)';
-            dot.style.backgroundColor = 'var(--accent-success)';
-            dot.style.borderColor = 'var(--accent-success)';
-        }
-    }
-
-    setTimeout(() => {
-        const lockScreen = document.getElementById('lockScreen');
-        if (lockScreen) {
-            lockScreen.classList.add('hidden');
-        }
-        // Clean up visual styling overrides
-        for (let i = 1; i <= 4; i++) {
-            const dot = document.getElementById(`pin-dot-${i}`);
-            if (dot) {
-                dot.style.boxShadow = '';
-                dot.style.backgroundColor = '';
-                dot.style.borderColor = '';
-            }
-        }
-    }, 400);
-}
-
-function flashErrorFeedback() {
-    const lockBox = document.querySelector('.lock-box');
-
-    // Play error haptic shake
-    if (lockBox) {
-        lockBox.classList.add('shake');
-        setTimeout(() => {
-            lockBox.classList.remove('shake');
-        }, 400);
-    }
-
-    // Flash dots in red
-    for (let i = 1; i <= 4; i++) {
-        const dot = document.getElementById(`pin-dot-${i}`);
-        if (dot) {
-            dot.classList.add('error');
-        }
-    }
-}
-
-function lockLedger() {
-    sessionStorage.removeItem('fuel_flow_unlocked');
-    const lockScreen = document.getElementById('lockScreen');
-    if (lockScreen) {
-        lockScreen.classList.remove('hidden');
-        resetPinState();
-    }
-}
-
-// Physical keyboard listeners for desktop convenience
-function handlePhysicalKeyPress(event) {
-    const lockScreen = document.getElementById('lockScreen');
-    if (!lockScreen || lockScreen.classList.contains('hidden')) return;
-
-    const key = event.key;
-    if (/[0-9]/.test(key)) {
-        pressPinNum(parseInt(key));
-    } else if (key === 'Backspace') {
-        backspacePin();
-    } else if (key === 'Escape' || key === 'c' || key === 'C') {
-        clearPin();
-    }
 }
