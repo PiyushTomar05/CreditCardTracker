@@ -33,8 +33,8 @@ function updateApiUrl() {
         API_URL = `http://${customSyncIp.trim()}:3000/api/data`;
     } else {
         const isLocalOrigin = window.location.protocol === 'http:' || window.location.protocol === 'https:';
-        API_URL = isLocalOrigin 
-            ? '/api/data' 
+        API_URL = isLocalOrigin
+            ? '/api/data'
             : 'http://localhost:3000/api/data';
     }
 }
@@ -108,19 +108,19 @@ function initDateDisplay() {
 async function initStorageAndState() {
     try {
         updateSyncBadge('loading', 'Loading Sync...');
-        
+
         // 1.2 second timeout abort controller
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 1200);
-        
+
         const response = await fetch(API_URL, {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
             signal: controller.signal
         });
-        
+
         clearTimeout(timeoutId);
-        
+
         if (response.ok) {
             const serverData = await response.json();
             if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
@@ -193,7 +193,7 @@ function loadStateFromData(parsed) {
             localStorage.setItem('fuel_flow_secure_pin', parsed.securePin);
         }
     }
-    
+
     // Force strict card limit settings safely
     const defaultCards = {
         axis: { name: 'Axis Bank', limit: 245000, spent: 0 },
@@ -201,7 +201,7 @@ function loadStateFromData(parsed) {
         hdfc: { name: 'HDFC Bank', limit: 175000, spent: 0 },
         sbi: { name: 'SBI Card', limit: 377000, spent: 0 }
     };
-    
+
     if (!state.cards || typeof state.cards !== 'object' || Array.isArray(state.cards)) {
         state.cards = defaultCards;
     } else {
@@ -233,7 +233,7 @@ function loadStateFromLocalStorage() {
                 const parsed = JSON.parse(oldState);
                 if (parsed && typeof parsed === 'object') {
                     const oldTransactions = Array.isArray(parsed.transactions) ? parsed.transactions : [];
-                    
+
                     oldTransactions.forEach((t, i) => {
                         if (t && t.debited && t.received) {
                             const dateStr = t.date || new Date().toISOString().split('T')[0];
@@ -245,7 +245,7 @@ function loadStateFromLocalStorage() {
                                 date: dateStr,
                                 debited: parseFloat(t.debited) || 0
                             });
-                            
+
                             state.receipts.push({
                                 id: `mig_r_${i}_${t.id || Math.random()}`,
                                 date: dateStr,
@@ -276,7 +276,7 @@ function loadStateFromLocalStorage() {
         hdfc: { name: 'HDFC Bank', limit: 175000, spent: 0 },
         sbi: { name: 'SBI Card', limit: 377000, spent: 0 }
     };
-    
+
     if (!state.cards || typeof state.cards !== 'object' || Array.isArray(state.cards)) {
         state.cards = defaultCards;
     } else {
@@ -307,7 +307,7 @@ function saveStateToStorage() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
         console.log("Database successfully synced to local storage.");
         updateDiagnostics("Saved Database");
-        
+
         if (state.syncMode === 'server') {
             saveStateToSyncServer();
         }
@@ -321,7 +321,7 @@ function saveStateToStorage() {
 function updateSyncBadge(status, text) {
     const badge = document.getElementById('syncStatusBadge');
     if (!badge) return;
-    
+
     badge.className = `sync-status-badge ${status}`;
     const textEl = badge.querySelector('.sync-status-text');
     if (textEl) textEl.textContent = text;
@@ -331,10 +331,10 @@ function updateSyncBadge(status, text) {
 function openSyncInfoModal() {
     const modal = document.getElementById('syncInfoModal');
     if (!modal) return;
-    
+
     const activeInfo = document.getElementById('syncServerActiveInfo');
     const browserInfo = document.getElementById('syncBrowserOnlyInfo');
-    
+
     if (state.syncMode === 'server') {
         if (activeInfo) activeInfo.style.display = 'block';
         if (browserInfo) browserInfo.style.display = 'none';
@@ -342,13 +342,13 @@ function openSyncInfoModal() {
         if (activeInfo) activeInfo.style.display = 'none';
         if (browserInfo) browserInfo.style.display = 'block';
     }
-    
+
     // Populate custom sync IP input
     const ipInput = document.getElementById('customSyncIp');
     if (ipInput) {
         ipInput.value = localStorage.getItem(CUSTOM_SYNC_KEY) || '';
     }
-    
+
     modal.classList.add('active');
 }
 
@@ -369,28 +369,28 @@ function initSyncInfoModalBindings() {
 async function saveCustomSyncIp() {
     const ipInput = document.getElementById('customSyncIp');
     if (!ipInput) return;
-    
+
     const val = ipInput.value.trim();
     if (!val) {
         alert("Please enter a valid IP address.");
         return;
     }
-    
+
     // Quick regex validation for IPv4
     const ipPattern = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
     if (!ipPattern.test(val) && val !== 'localhost' && val !== '127.0.0.1') {
         alert("Please enter a valid IP address (e.g. 192.168.1.5).");
         return;
     }
-    
+
     localStorage.setItem(CUSTOM_SYNC_KEY, val);
     updateApiUrl();
     closeSyncInfoModal();
-    
+
     // Immediately trigger a sync attempt with the new endpoint!
     await initStorageAndState();
     renderAll();
-    
+
     if (state.syncMode === 'server') {
         alert("🎉 Connected successfully! Phone is now synced to your PC's persistent ledger database.");
         // Restart secure lock to make sure PIN is updated
@@ -404,7 +404,7 @@ async function clearCustomSyncIp() {
     localStorage.removeItem(CUSTOM_SYNC_KEY);
     updateApiUrl();
     closeSyncInfoModal();
-    
+
     await initStorageAndState();
     renderAll();
     initSecurityLock();
@@ -416,7 +416,7 @@ function updateDiagnostics(actionName = "Ready") {
     try {
         const localData = localStorage.getItem(STORAGE_KEY);
         const sizeKB = localData ? (localData.length / 1024).toFixed(2) : 0;
-        
+
         const keysCountEl = document.getElementById('diag-keys-count');
         if (keysCountEl) keysCountEl.textContent = localData ? `${sizeKB} KB` : 'Empty';
 
@@ -478,7 +478,7 @@ function calculateSums() {
         if (!d) return;
         const amt = parseFloat(d.debited) || 0;
         state.totalDebited += amt;
-        
+
         if (d.card && state.cards[d.card]) {
             state.cards[d.card].spent += amt;
         }
@@ -507,13 +507,13 @@ function renderMetrics() {
 
     const totalReceivedEl = document.getElementById('total-received-sum');
     if (totalReceivedEl) totalReceivedEl.textContent = formatINRFull(state.totalReceived || 0);
-    
+
     const cashEl = document.getElementById('method-sum-cash');
     if (cashEl) cashEl.textContent = formatINRFull(state.cashReceived || 0);
 
     const onlineEl = document.getElementById('method-sum-online');
     if (onlineEl) onlineEl.textContent = formatINRFull(state.onlineReceived || 0);
-    
+
     // Variance label with color trigger
     const varianceEl = document.getElementById('total-charges-sum');
     if (varianceEl) {
@@ -535,16 +535,16 @@ function renderMetrics() {
             const spent = card.spent || 0;
             const limit = card.limit || 0;
             const available = Math.max(limit - spent, 0);
-            
+
             // Progress fill percent
             const fillPercent = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
-            
+
             const spentEl = document.getElementById(`cc-spent-${key}`);
             if (spentEl) spentEl.textContent = `Spent: ${formatINR(spent)}`;
 
             const availEl = document.getElementById(`cc-avail-${key}`);
             if (availEl) availEl.textContent = `Avail: ${formatINR(available)}`;
-            
+
             // Update bar fill width and color dynamically
             const fillEl = document.getElementById(`cc-fill-${key}`);
             if (fillEl) {
@@ -566,7 +566,7 @@ function renderMetrics() {
 function toggleCardFilter(cardKey) {
     const indicator = document.getElementById('active-card-filter-indicator');
     const cardEl = document.getElementById(`card-3d-${cardKey}`);
-    
+
     if (state.activeCardFilter === cardKey) {
         // Reset card filter
         state.activeCardFilter = null;
@@ -578,7 +578,7 @@ function toggleCardFilter(cardKey) {
             const el = document.getElementById(`card-3d-${k}`);
             if (el) el.classList.remove('active-card');
         });
-        
+
         // Activate selected card
         state.activeCardFilter = cardKey;
         if (cardEl) cardEl.classList.add('active-card');
@@ -588,7 +588,7 @@ function toggleCardFilter(cardKey) {
             indicator.textContent = `Filtered to ${cardName} \u2022 Click card again to reset`;
         }
     }
-    
+
     renderDebitsTable();
 
     // Smooth scroll to the filtered debits ledger on mobile for clear interactive feedback!
@@ -607,7 +607,7 @@ function renderDebitsTable() {
     tbody.innerHTML = '';
 
     let filtered = Array.isArray(state.debits) ? [...state.debits].filter(d => d && d.date && d.id) : [];
-    
+
     // Apply interactive card filter if active
     if (state.activeCardFilter) {
         filtered = filtered.filter(d => d.card === state.activeCardFilter);
@@ -660,7 +660,7 @@ function renderReceiptsTable() {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    const sorted = Array.isArray(state.receipts) 
+    const sorted = Array.isArray(state.receipts)
         ? [...state.receipts].filter(r => r && r.date && r.id).sort((a, b) => new Date(b.date) - new Date(a.date))
         : [];
 
@@ -715,7 +715,7 @@ function openDebitModal() {
     document.getElementById('debitForm').reset();
     document.getElementById('debit-id').value = '';
     document.getElementById('debit-date').value = new Date().toISOString().split('T')[0];
-    
+
     document.getElementById('debitModal').classList.add('active');
 }
 
@@ -725,12 +725,12 @@ function closeDebitModal() {
 
 function handleDebitSubmit(event) {
     event.preventDefault();
-    
+
     const id = document.getElementById('debit-id').value;
     const date = document.getElementById('debit-date').value;
     const card = document.getElementById('debit-card').value;
     const amount = parseFloat(document.getElementById('debit-amount').value);
-    
+
     if (id) {
         const index = state.debits.findIndex(d => d.id === id);
         if (index !== -1) {
@@ -740,7 +740,7 @@ function handleDebitSubmit(event) {
         const newId = 'd_' + Math.random().toString(36).substr(2, 9);
         state.debits.push({ id: newId, card, date, debited: amount });
     }
-    
+
     closeDebitModal();
     saveStateToStorage();
     renderAll();
@@ -754,7 +754,7 @@ function editDebit(id) {
         document.getElementById('debit-date').value = debit.date;
         document.getElementById('debit-card').value = debit.card;
         document.getElementById('debit-amount').value = debit.debited;
-        
+
         document.getElementById('debitModal').classList.add('active');
     }
 }
@@ -774,7 +774,7 @@ function openReceiptModal() {
     document.getElementById('receiptForm').reset();
     document.getElementById('receipt-id').value = '';
     document.getElementById('receipt-date').value = new Date().toISOString().split('T')[0];
-    
+
     document.getElementById('receiptModal').classList.add('active');
 }
 
@@ -784,13 +784,13 @@ function closeReceiptModal() {
 
 function handleReceiptSubmit(event) {
     event.preventDefault();
-    
+
     const id = document.getElementById('receipt-id').value;
     const date = document.getElementById('receipt-date').value;
     const amount = parseFloat(document.getElementById('receipt-amount').value);
     const method = document.getElementById('receipt-method').value;
     const notes = document.getElementById('receipt-notes').value;
-    
+
     if (id) {
         const index = state.receipts.findIndex(r => r.id === id);
         if (index !== -1) {
@@ -800,7 +800,7 @@ function handleReceiptSubmit(event) {
         const newId = 'r_' + Math.random().toString(36).substr(2, 9);
         state.receipts.push({ id: newId, date, received: amount, method, notes });
     }
-    
+
     closeReceiptModal();
     saveStateToStorage();
     renderAll();
@@ -815,7 +815,7 @@ function editReceipt(id) {
         document.getElementById('receipt-amount').value = receipt.received;
         document.getElementById('receipt-method').value = receipt.method || 'cash';
         document.getElementById('receipt-notes').value = receipt.notes || '';
-        
+
         document.getElementById('receiptModal').classList.add('active');
     }
 }
@@ -836,10 +836,10 @@ function exportDataToCSV() {
         alert("There is no ledger data to export!");
         return;
     }
-    
+
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Type,Date,SourceOrCard,Amount,Notes\r\n";
-    
+
     // 1. Export Debits
     state.debits.forEach(d => {
         const row = ["Debit", d.date, d.card, d.debited, ""].join(",");
@@ -852,7 +852,7 @@ function exportDataToCSV() {
         const row = ["Receipt", r.date, r.method, r.received, notesEscaped].join(",");
         csvContent += row + "\r\n";
     });
-    
+
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -870,41 +870,41 @@ function triggerCSVImport() {
 function importDataFromCSV(event) {
     const file = event.target.files[0];
     if (!file) return;
-    
+
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = function (e) {
         const text = e.target.result;
         const lines = text.split(/\r\n|\n/);
-        
+
         if (lines.length < 2) {
             alert("The uploaded file appears to be empty or malformed.");
             return;
         }
-        
+
         const headers = lines[0].toLowerCase().split(',');
         if (!headers.includes('type') || !headers.includes('sourceorcard') || !headers.includes('amount')) {
             alert("Error: Incorrect CSV format! Ensure you are importing a Karan Filling independent ledger CSV.");
             return;
         }
-        
+
         const importedDebits = [];
         const importedReceipts = [];
-        
+
         for (let i = 1; i < lines.length; i++) {
             const line = lines[i].trim();
             if (!line) continue;
-            
+
             const cols = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || line.split(',');
             if (cols.length < 4) continue;
-            
+
             const clean = str => str ? str.replace(/^"|"$/g, '').trim() : '';
-            
+
             const type = clean(cols[0]).toLowerCase();
             const date = clean(cols[1]);
             const source = clean(cols[2]).toLowerCase();
             const amount = parseFloat(clean(cols[3])) || 0;
             const notes = clean(cols[4]);
-            
+
             if (type === 'debit' && ['axis', 'icici', 'hdfc', 'sbi'].includes(source) && amount > 0) {
                 importedDebits.push({
                     id: 'd_' + Math.random().toString(36).substr(2, 9),
@@ -922,7 +922,7 @@ function importDataFromCSV(event) {
                 });
             }
         }
-        
+
         const totalImported = importedDebits.length + importedReceipts.length;
         if (totalImported > 0) {
             if (confirm(`Successfully read ${importedDebits.length} debits and ${importedReceipts.length} receipts from CSV. Merge with current data? (Cancel will overwrite current records completely)`)) {
@@ -932,7 +932,7 @@ function importDataFromCSV(event) {
                 state.debits = importedDebits;
                 state.receipts = importedReceipts;
             }
-            
+
             saveStateToStorage();
             renderAll();
             alert("Ledger restore complete!");
@@ -948,9 +948,9 @@ function importDataFromCSV(event) {
 function populateMonthDropdown() {
     const select = document.getElementById('statement-month');
     if (!select) return;
-    
+
     const monthsSet = new Set();
-    
+
     if (Array.isArray(state.debits)) {
         state.debits.forEach(d => {
             if (d && d.date && typeof d.date === 'string') {
@@ -961,7 +961,7 @@ function populateMonthDropdown() {
             }
         });
     }
-    
+
     if (Array.isArray(state.receipts)) {
         state.receipts.forEach(r => {
             if (r && r.date && typeof r.date === 'string') {
@@ -972,14 +972,14 @@ function populateMonthDropdown() {
             }
         });
     }
-    
+
     const uniqueMonths = Array.from(monthsSet).sort().reverse();
     const currentVal = select.value || 'all';
-    
+
     select.innerHTML = '<option value="all">All Months</option>';
-    
+
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-    
+
     uniqueMonths.forEach(ym => {
         const parts = ym.split('-');
         if (parts.length >= 2) {
@@ -991,7 +991,7 @@ function populateMonthDropdown() {
             }
         }
     });
-    
+
     if (Array.from(select.options).some(opt => opt.value === currentVal)) {
         select.value = currentVal;
     }
@@ -1000,23 +1000,23 @@ function populateMonthDropdown() {
 // Export Month Statement
 function exportMonthStatement() {
     const selectedMonth = document.getElementById('statement-month').value;
-    
+
     let filteredDebits = [...state.debits];
     let filteredReceipts = [...state.receipts];
-    
+
     if (selectedMonth !== 'all') {
         filteredDebits = filteredDebits.filter(d => d.date && d.date.startsWith(selectedMonth));
         filteredReceipts = filteredReceipts.filter(r => r.date && r.date.startsWith(selectedMonth));
     }
-    
+
     if (filteredDebits.length === 0 && filteredReceipts.length === 0) {
         alert("No transaction entries found for the selected period.");
         return;
     }
-     
+
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Type,Date,SourceOrCard,Amount,Notes\r\n";
-     
+
     filteredDebits.forEach(d => {
         const row = ["Debit", d.date, d.card, d.debited, ""].join(",");
         csvContent += row + "\r\n";
@@ -1027,11 +1027,11 @@ function exportMonthStatement() {
         const row = ["Receipt", r.date, r.method, r.received, notesEscaped].join(",");
         csvContent += row + "\r\n";
     });
-     
+
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-     
+
     const fileSuffix = selectedMonth === 'all' ? 'full_statement' : `statement_${selectedMonth}`;
     link.setAttribute("download", `karan_filling_${fileSuffix}.csv`);
     document.body.appendChild(link);
@@ -1055,14 +1055,14 @@ function loadDemoData() {
     if ((state.debits.length > 0 || state.receipts.length > 0) && !confirm("Loading demo data will clear your existing records. Proceed?")) {
         return;
     }
-    
+
     const today = new Date();
     const subDays = (d) => {
         const copy = new Date(today);
         copy.setDate(today.getDate() - d);
         return copy.toISOString().split('T')[0];
     };
-    
+
     state.debits = [
         { id: 'd_demo1', card: 'axis', date: subDays(1), debited: 15000 },
         { id: 'd_demo2', card: 'icici', date: subDays(3), debited: 20000 },
@@ -1082,7 +1082,7 @@ function loadDemoData() {
         { id: 'r_demo6', date: subDays(12), received: 29400, method: 'online', notes: 'Online transfer via pump account' },
         { id: 'r_demo7', date: subDays(15), received: 49000, method: 'cash', notes: 'Bikram S. cash handover' }
     ];
-    
+
     saveStateToStorage();
     renderAll();
     alert("Demo independent records loaded successfully!");
@@ -1248,7 +1248,7 @@ function flashSuccessAndUnlock() {
 
 function flashErrorFeedback() {
     const lockBox = document.querySelector('.lock-box');
-    
+
     // Play error haptic shake
     if (lockBox) {
         lockBox.classList.add('shake');
