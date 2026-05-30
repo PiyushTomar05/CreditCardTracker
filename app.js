@@ -17,18 +17,36 @@ let state = {
     },
     debits: [],
     receipts: [],
-    activeCardFilter: null // Toggled by clicking 3D Cards
+    activeCardFilter: null, // Toggled by clicking 3D Cards
+    syncMode: 'loading',
+    securePin: ''
 };
 
 // LocalStorage Keys
 const STORAGE_KEY = 'fuel_flow_independent_state';
+const CUSTOM_SYNC_KEY = 'fuel_flow_custom_sync_url';
+
+let API_URL = '';
+function updateApiUrl() {
+    const customSyncIp = localStorage.getItem(CUSTOM_SYNC_KEY);
+    if (customSyncIp) {
+        API_URL = `http://${customSyncIp.trim()}:3000/api/data`;
+    } else {
+        const isLocalOrigin = window.location.protocol === 'http:' || window.location.protocol === 'https:';
+        API_URL = isLocalOrigin 
+            ? '/api/data' 
+            : 'http://localhost:3000/api/data';
+    }
+}
+updateApiUrl();
 
 let isLoaded = false;
 
 // Initialize Application
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     try {
-        loadStateFromStorage();
+        initSyncInfoModalBindings(); // Activate popup event bindings
+        await initStorageAndState(); // Dynamic persistent handshake
         initDateDisplay();
         renderAll();
         isLoaded = true; // Securely lock state after first render completes!
@@ -86,23 +104,124 @@ function initDateDisplay() {
     }
 }
 
+// Asynchronous Handshake & Sync Engine
+async function initStorageAndState() {
+    try {
+        updateSyncBadge('loading', 'Loading Sync...');
+        
+        // 1.2 second timeout abort controller
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1200);
+        
+        const response = await fetch(API_URL, {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' },
+            signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+            const serverData = await response.json();
+            if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
+                loadStateFromData(serverData);
+                state.syncMode = 'server';
+                updateSyncBadge('active', 'Server Sync Active');
+                console.log("Connected to persistent local storage sync server.");
+                return;
+            } else {
+                console.log("Sync server empty. Performing initial migration from LocalStorage...");
+                loadStateFromLocalStorage();
+                state.syncMode = 'server';
+                updateSyncBadge('active', 'Server Sync Active');
+                await saveStateToSyncServer();
+                return;
+            }
+        } else {
+            throw new Error(`Server responded with status ${response.status}`);
+        }
+    } catch (err) {
+        console.warn("Sync server offline (normal in static deployment). Falling back to browser storage:", err);
+        loadStateFromLocalStorage();
+        state.syncMode = 'browser';
+        updateSyncBadge('fallback', 'Browser Memory Only');
+    }
+}
+
+async function saveStateToSyncServer() {
+    if (state.syncMode !== 'server') return;
+    try {
+        const payload = {
+            cards: state.cards,
+            debits: state.debits,
+            receipts: state.receipts,
+            securePin: state.securePin || localStorage.getItem('fuel_flow_secure_pin') || ''
+        };
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (response.ok) {
+            console.log("Physically backed up state to sync server.");
+            updateDiagnostics("Saved Database (Synced)");
+        } else {
+            console.error("Sync server write failed:", response.status);
+            updateDiagnostics("Server Write Error");
+        }
+    } catch (err) {
+        console.error("Failed to connect to sync server for saving:", err);
+        updateSyncBadge('fallback', 'Sync Server Lost');
+        state.syncMode = 'browser';
+        updateDiagnostics("Sync Server Offline");
+    }
+}
+
+function loadStateFromData(parsed) {
+    if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.debits)) {
+            state.debits = parsed.debits.filter(d => d && d.id && typeof d.id === 'string' && !d.id.includes('demo'));
+        }
+        if (Array.isArray(parsed.receipts)) {
+            state.receipts = parsed.receipts.filter(r => r && r.id && typeof r.id === 'string' && !r.id.includes('demo'));
+        }
+        if (parsed.cards && typeof parsed.cards === 'object' && !Array.isArray(parsed.cards)) {
+            state.cards = parsed.cards;
+        }
+        if (parsed.securePin) {
+            state.securePin = parsed.securePin;
+            localStorage.setItem('fuel_flow_secure_pin', parsed.securePin);
+        }
+    }
+    
+    // Force strict card limit settings safely
+    const defaultCards = {
+        axis: { name: 'Axis Bank', limit: 245000, spent: 0 },
+        icici: { name: 'ICICI Bank', limit: 380000, spent: 0 },
+        hdfc: { name: 'HDFC Bank', limit: 175000, spent: 0 },
+        sbi: { name: 'SBI Card', limit: 377000, spent: 0 }
+    };
+    
+    if (!state.cards || typeof state.cards !== 'object' || Array.isArray(state.cards)) {
+        state.cards = defaultCards;
+    } else {
+        Object.keys(defaultCards).forEach(key => {
+            if (!state.cards[key] || typeof state.cards[key] !== 'object') {
+                state.cards[key] = defaultCards[key];
+            } else {
+                state.cards[key].limit = defaultCards[key].limit;
+            }
+        });
+    }
+}
+
 // Load State from LocalStorage
-function loadStateFromStorage() {
+function loadStateFromLocalStorage() {
     const localData = localStorage.getItem(STORAGE_KEY);
     if (localData) {
         try {
             const parsed = JSON.parse(localData);
-            if (parsed && typeof parsed === 'object') {
-                if (Array.isArray(parsed.debits)) {
-                    state.debits = parsed.debits.filter(d => d && d.id && typeof d.id === 'string' && !d.id.includes('demo'));
-                }
-                if (Array.isArray(parsed.receipts)) {
-                    state.receipts = parsed.receipts.filter(r => r && r.id && typeof r.id === 'string' && !r.id.includes('demo'));
-                }
-                if (parsed.cards && typeof parsed.cards === 'object' && !Array.isArray(parsed.cards)) {
-                    state.cards = parsed.cards;
-                }
-            }
+            loadStateFromData(parsed);
         } catch (e) {
             console.error("Failed to parse storage, loading clean slate.", e);
         }
@@ -144,6 +263,12 @@ function loadStateFromStorage() {
         }
     }
 
+    // Secondary backup sync for secure Pin variable
+    const savedPin = localStorage.getItem('fuel_flow_secure_pin');
+    if (savedPin) {
+        state.securePin = savedPin;
+    }
+
     // Force strict card limit settings safely
     const defaultCards = {
         axis: { name: 'Axis Bank', limit: 245000, spent: 0 },
@@ -165,16 +290,125 @@ function loadStateFromStorage() {
     }
 }
 
+// Backward-compatible alias
+function loadStateFromStorage() {
+    loadStateFromLocalStorage();
+}
+
 // Save State to LocalStorage
 function saveStateToStorage() {
     try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        const payload = {
+            cards: state.cards,
+            debits: state.debits,
+            receipts: state.receipts,
+            securePin: state.securePin || localStorage.getItem('fuel_flow_secure_pin') || ''
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
         console.log("Database successfully synced to local storage.");
         updateDiagnostics("Saved Database");
+        
+        if (state.syncMode === 'server') {
+            saveStateToSyncServer();
+        }
     } catch (e) {
         console.error("Critical: Storage write failed!", e);
         updateDiagnostics("Write Failed!");
     }
+}
+
+// Sync UI Badge helper
+function updateSyncBadge(status, text) {
+    const badge = document.getElementById('syncStatusBadge');
+    if (!badge) return;
+    
+    badge.className = `sync-status-badge ${status}`;
+    const textEl = badge.querySelector('.sync-status-text');
+    if (textEl) textEl.textContent = text;
+}
+
+// Sync System Information Popups
+function openSyncInfoModal() {
+    const modal = document.getElementById('syncInfoModal');
+    if (!modal) return;
+    
+    const activeInfo = document.getElementById('syncServerActiveInfo');
+    const browserInfo = document.getElementById('syncBrowserOnlyInfo');
+    
+    if (state.syncMode === 'server') {
+        if (activeInfo) activeInfo.style.display = 'block';
+        if (browserInfo) browserInfo.style.display = 'none';
+    } else {
+        if (activeInfo) activeInfo.style.display = 'none';
+        if (browserInfo) browserInfo.style.display = 'block';
+    }
+    
+    // Populate custom sync IP input
+    const ipInput = document.getElementById('customSyncIp');
+    if (ipInput) {
+        ipInput.value = localStorage.getItem(CUSTOM_SYNC_KEY) || '';
+    }
+    
+    modal.classList.add('active');
+}
+
+function closeSyncInfoModal() {
+    const modal = document.getElementById('syncInfoModal');
+    if (modal) modal.classList.remove('active');
+}
+
+function initSyncInfoModalBindings() {
+    const modal = document.getElementById('syncInfoModal');
+    if (!modal) return;
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeSyncInfoModal();
+    });
+}
+
+// Remote Wi-Fi Sync Override Handlers
+async function saveCustomSyncIp() {
+    const ipInput = document.getElementById('customSyncIp');
+    if (!ipInput) return;
+    
+    const val = ipInput.value.trim();
+    if (!val) {
+        alert("Please enter a valid IP address.");
+        return;
+    }
+    
+    // Quick regex validation for IPv4
+    const ipPattern = /^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    if (!ipPattern.test(val) && val !== 'localhost' && val !== '127.0.0.1') {
+        alert("Please enter a valid IP address (e.g. 192.168.1.5).");
+        return;
+    }
+    
+    localStorage.setItem(CUSTOM_SYNC_KEY, val);
+    updateApiUrl();
+    closeSyncInfoModal();
+    
+    // Immediately trigger a sync attempt with the new endpoint!
+    await initStorageAndState();
+    renderAll();
+    
+    if (state.syncMode === 'server') {
+        alert("🎉 Connected successfully! Phone is now synced to your PC's persistent ledger database.");
+        // Restart secure lock to make sure PIN is updated
+        initSecurityLock();
+    } else {
+        alert("⚠️ Connection failed. Could not reach sync server at http://" + val + ":3000. Please double check that the launcher batch window is open on your PC and you are on the same Wi-Fi network.");
+    }
+}
+
+async function clearCustomSyncIp() {
+    localStorage.removeItem(CUSTOM_SYNC_KEY);
+    updateApiUrl();
+    closeSyncInfoModal();
+    
+    await initStorageAndState();
+    renderAll();
+    initSecurityLock();
+    alert("Connection override cleared. Restored standard auto-origin routing.");
 }
 
 // Live diagnostics updater
@@ -861,7 +1095,7 @@ let isSettingPin = false;
 let tempPin = '';
 
 function initSecurityLock() {
-    const savedPin = localStorage.getItem('fuel_flow_secure_pin');
+    const savedPin = localStorage.getItem('fuel_flow_secure_pin') || state.securePin;
     const isUnlocked = sessionStorage.getItem('fuel_flow_unlocked') === 'true';
     const lockScreen = document.getElementById('lockScreen');
 
@@ -881,7 +1115,7 @@ function initSecurityLock() {
 function resetPinState() {
     enteredPin = '';
     tempPin = '';
-    const savedPin = localStorage.getItem('fuel_flow_secure_pin');
+    const savedPin = localStorage.getItem('fuel_flow_secure_pin') || state.securePin;
     const titleEl = document.getElementById('lockTitle');
     const subtitleEl = document.getElementById('lockSubtitle');
 
@@ -935,7 +1169,7 @@ function updatePinDots() {
 }
 
 function verifyEnteredPin() {
-    const savedPin = localStorage.getItem('fuel_flow_secure_pin');
+    const savedPin = localStorage.getItem('fuel_flow_secure_pin') || state.securePin;
     const titleEl = document.getElementById('lockTitle');
     const subtitleEl = document.getElementById('lockSubtitle');
 
@@ -952,6 +1186,8 @@ function verifyEnteredPin() {
             if (enteredPin === tempPin) {
                 // Pin matched successfully!
                 localStorage.setItem('fuel_flow_secure_pin', enteredPin);
+                state.securePin = enteredPin;
+                saveStateToStorage(); // Force immediate backup of PIN settings to the sync server!
                 sessionStorage.setItem('fuel_flow_unlocked', 'true');
                 flashSuccessAndUnlock();
             } else {

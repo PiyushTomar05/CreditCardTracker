@@ -1057,4 +1057,97 @@ tr:hover td {
     }
 }
 
+/* ==================== STORAGE SYNC STATUS BADGE ==================== */
+.sync-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: transform var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.sync-status-badge:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.sync-status-badge:active {
+    transform: scale(0.98);
+}
+
+.sync-dot-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    position: relative;
+    display: inline-block;
+}
+
+/* Base animations */
+@keyframes syncPulseGreen {
+    0%, 100% { box-shadow: 0 0 4px #10b981; transform: scale(1); }
+    50% { box-shadow: 0 0 10px #10b981; transform: scale(1.15); }
+}
+
+@keyframes syncPulseYellow {
+    0%, 100% { box-shadow: 0 0 4px #f59e0b; transform: scale(1); }
+    50% { box-shadow: 0 0 10px #f59e0b; transform: scale(1.15); }
+}
+
+@keyframes syncPulseRed {
+    0%, 100% { box-shadow: 0 0 4px #ef4444; transform: scale(1); }
+    50% { box-shadow: 0 0 10px #ef4444; transform: scale(1.15); }
+}
+
+/* Badge States */
+.sync-status-badge.loading {
+    border-color: rgba(245, 158, 11, 0.25);
+    color: #ffbc57;
+}
+.sync-status-badge.loading .sync-dot-indicator {
+    background-color: var(--accent-gold);
+    animation: syncPulseYellow 2s infinite ease-in-out;
+}
+
+.sync-status-badge.active {
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #3ae8a0;
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.1);
+}
+.sync-status-badge.active:hover {
+    border-color: rgba(16, 185, 129, 0.55);
+}
+.sync-status-badge.active .sync-dot-indicator {
+    background-color: var(--accent-success);
+    animation: syncPulseGreen 2s infinite ease-in-out;
+}
+
+.sync-status-badge.fallback {
+    border-color: rgba(239, 68, 68, 0.25);
+    color: #ff6e6e;
+    box-shadow: 0 0 15px rgba(239, 68, 68, 0.05);
+}
+.sync-status-badge.fallback:hover {
+    border-color: rgba(239, 68, 68, 0.55);
+}
+.sync-status-badge.fallback .sync-dot-indicator {
+    background-color: var(--accent-danger);
+    animation: syncPulseRed 2s infinite ease-in-out;
+}
+
+@media (max-width: 768px) {
+    .sync-status-badge {
+        order: -1; /* Place badge on top on mobile headers */
+        margin-bottom: 0.5rem;
+    }
+}
+
+
 

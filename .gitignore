@@ -1,0 +1,17 @@
+# Karan Filling Station Ledger - Git Ignore Configuration
+
+# Explicitly ignore personal financial databases and secure PIN configuration
+data.json
+
+# Local environment backup files
+*.csv
+*.xlsx
+.DS_Store
+Thumbs.db
+
+# Ignore Node package logs or modules if any get generated locally
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json

@@ -60,6 +60,12 @@
                 <h1 class="brand-title">Karan Filling Station Ledger</h1>
             </div>
 
+            <!-- Sync Status Badge -->
+            <div class="sync-status-badge loading" id="syncStatusBadge" onclick="openSyncInfoModal()" title="View Storage Sync Details">
+                <span class="sync-dot-indicator"></span>
+                <span class="sync-status-text">Loading Sync...</span>
+            </div>
+
             <div class="header-controls">
                 <!-- Month selector and Statement downloader -->
                 <div style="display: flex; align-items: center; gap: 0.5rem; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); padding: 0.25rem 0.5rem; border-radius: 10px; margin-right: 0.5rem;">
@@ -364,6 +370,74 @@
                     <button type="submit" class="btn btn-success" style="color: #000;">Save Receipt</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- ==================== MODAL 3: STORAGE SYNC SYSTEM INFO ==================== -->
+    <div class="modal-overlay" id="syncInfoModal">
+        <div class="modal-content" style="max-width: 490px;">
+            <div class="modal-header">
+                <h3 class="modal-title" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <svg viewBox="0 0 24 24" style="width: 22px; height: 22px; fill: none; stroke: var(--accent-gold); stroke-width: 2.5">
+                        <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                        <line x1="12" y1="16" x2="12" y2="12"/>
+                        <line x1="12" y1="8" x2="12.01" y2="8"/>
+                    </svg>
+                    Storage Sync Status
+                </h3>
+                <button class="close-btn" onclick="closeSyncInfoModal()">&times;</button>
+            </div>
+            
+            <div id="syncServerActiveInfo" style="display: none;">
+                <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
+                    <div style="font-size: 3rem; margin-bottom: 0.5rem;">🟢</div>
+                    <h4 style="font-size: 1.1rem; font-weight: 800; color: var(--accent-success); margin-bottom: 0.25rem;">Server Sync is Active!</h4>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary);">Your data is fully secure and backed up physically.</p>
+                </div>
+                <div style="font-size: 0.85rem; line-height: 1.6; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.75rem;">
+                    <p>✨ <b>Permanent Storage:</b> Every time you add, edit, or delete transactions, or update your lock PIN, changes are automatically saved to <code style="color: var(--accent-gold); background: rgba(255,255,255,0.05); padding: 0.1rem 0.3rem; border-radius: 4px; font-family: monospace;">data.json</code> on your computer's hard drive.</p>
+                    <p>🔒 <b>Complete Safeguard:</b> Browser cleanups, incognito mode, or browser crashes will <b>never</b> wipe your credit card records or security PIN anymore.</p>
+                </div>
+            </div>
+
+            <div id="syncBrowserOnlyInfo" style="display: none;">
+                <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem; text-align: center;">
+                    <div style="font-size: 3rem; margin-bottom: 0.5rem;">⚠️</div>
+                    <h4 style="font-size: 1.1rem; font-weight: 800; color: var(--accent-danger); margin-bottom: 0.25rem;">Browser Storage Only (Temporary)</h4>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary);">Your data is at risk of being reset by your web browser.</p>
+                </div>
+                <div style="font-size: 0.85rem; line-height: 1.5; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.75rem;">
+                    <p style="background: rgba(245, 158, 11, 0.06); border-left: 3px solid var(--accent-gold); padding: 0.75rem; border-radius: 4px; font-size: 0.8rem; color: #ffbc57;">
+                        <b>WARNING:</b> Incognito tabs, disk cleanup software, browser history clearings, or browser updates will completely wipe your ledger data and lock PIN.
+                    </p>
+                    <p style="font-weight: 700; margin-top: 0.5rem; color: var(--text-primary);">How to activate permanent persistent sync on your PC:</p>
+                    <ol style="margin-left: 1.25rem; display: flex; flex-direction: column; gap: 0.4rem;">
+                        <li>Open your project folder: <code style="background: rgba(255,255,255,0.05); padding: 0.15rem 0.3rem; border-radius: 4px; font-family: monospace;">d:\Projects\CreditCardTracker</code></li>
+                        <li>Find and double-click the file named <b><code style="color: var(--accent-gold);">run-ledger.bat</code></b>.</li>
+                        <li>This starts a local background sync server and launches the secure ledger on <code style="color: var(--accent-info);">http://localhost:3000</code>.</li>
+                    </ol>
+                    <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.5rem;"><i>Note: If this app is deployed on a static hosting service, you can also perform manual secure backups using the 📥/📤 (CSV Export/Import) buttons in the header dashboard at any time.</i></p>
+                </div>
+            </div>
+
+            <!-- Remote Phone Wi-Fi Sync Override -->
+            <div style="margin-top: 1.25rem; border-top: 1px dashed var(--border-color); padding-top: 1rem;">
+                <label for="customSyncIp" style="font-size: 0.72rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 0.5rem;">
+                    📱 Phone Access &amp; Remote Wi-Fi Sync
+                </label>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <input type="text" id="customSyncIp" class="input-field" placeholder="e.g. 192.168.1.5" style="padding: 0.55rem 0.75rem; font-size: 0.82rem; flex-grow: 1;">
+                    <button class="btn btn-primary" onclick="saveCustomSyncIp()" style="padding: 0.55rem 0.85rem; font-size: 0.8rem; border-radius: 8px;">Connect</button>
+                    <button class="btn btn-secondary" onclick="clearCustomSyncIp()" style="padding: 0.55rem 0.6rem; font-size: 0.8rem; border-radius: 8px; border-color: rgba(239,68,68,0.2); color: var(--accent-danger);" title="Clear Override">✕</button>
+                </div>
+                <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 0.5rem; line-height: 1.3;">
+                    If you open the online deployed website on your phone, enter your PC's IP address (shown in the black batch launcher window) to sync phone data directly to your computer!
+                </p>
+            </div>
+
+            <div class="form-actions" style="margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeSyncInfoModal()">Close</button>
+            </div>
         </div>
     </div>
 
