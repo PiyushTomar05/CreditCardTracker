@@ -1293,3 +1293,48 @@ tr:hover td {
         margin-bottom: 0.5rem;
     }
 }
+
+/* ==================== ADDITIONAL AUTH & DRAWER CUSTOM STYLES ==================== */
+
+.tiny-btn {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.55rem;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tiny-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+}
+
+.tiny-btn:active {
+    transform: scale(0.97);
+}
+
+#authToggleLink:hover {
+    text-decoration: underline !important;
+}
+
+/* Animations for loading database drawer and transition screens */
+#configDrawer {
+    animation: drawerFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes drawerFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
